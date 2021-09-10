@@ -1,2 +1,3 @@
-# helper-scripts
-Repo of some helper scripts to try and make lives easier
+# Helpers
+
+Little helper scripts to aid infrastructure testing
