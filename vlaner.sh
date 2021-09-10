@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# VLANer - Helper script to facilitate testing via trunk ports
+# spyr0 - v0.1
+# Usage: sudo ./vlaner.sh [create|destroy] [interface] (default interface is eth1) [config file] (default is vlans.cfg)
+
 if [ "$EUID" -ne 0 ]; then
   echo "Please run as root"
   exit
