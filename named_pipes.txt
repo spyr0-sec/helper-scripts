@@ -5,6 +5,7 @@ PIPE_EVE
 PIPE_EVENTROOT
 RpcProxy
 sql
+sql\query
 SQLLocal
 Winsock2
 netlogon
