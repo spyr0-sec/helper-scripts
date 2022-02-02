@@ -371,13 +371,15 @@ def extractUnsupportedOperatingSystems(nessus_scan_file):
     UnsupportedOSWorksheet.set_column(2, 2, 55)
     UnsupportedOSWorksheet.set_column(3, 3, 31)
     UnsupportedOSWorksheet.set_column(4, 4, 29)
-    UnsupportedOSWorksheet.autofilter('A1:E1000000')
+    UnsupportedOSWorksheet.set_column(5, 5, 40)
+    UnsupportedOSWorksheet.autofilter('A1:F1000000')
 
     UnsupportedOSWorksheet.write (0, 0, 'IP Address')
     UnsupportedOSWorksheet.write (0, 1, 'Hostname')
     UnsupportedOSWorksheet.write (0, 2, 'Operating System')
     UnsupportedOSWorksheet.write (0, 3, 'End of Mainstream Support Date')
     UnsupportedOSWorksheet.write (0, 4, 'End of Extended Support Date')
+    UnsupportedOSWorksheet.write (0, 5, 'End of Extended Security Update (ESU) Program Date')
 
     row, col = 1, 0
 
@@ -413,20 +415,7 @@ def extractUnsupportedOperatingSystems(nessus_scan_file):
             UnsupportedOSWorksheet.write (row, (col + 2), report_host_os)
             UnsupportedOSWorksheet.write (row, (col + 3), "13 January 2015")
             UnsupportedOSWorksheet.write (row, (col + 4), "14 January 2020")
-            row += 1
-        if 'Microsoft Windows Server 2012' in report_host_os:
-            UnsupportedOSWorksheet.write (row, col, report_ip)
-            UnsupportedOSWorksheet.write (row, (col + 1), report_fqdn)
-            UnsupportedOSWorksheet.write (row, (col + 2), report_host_os)
-            UnsupportedOSWorksheet.write (row, (col + 3), "09 October 2018")
-            UnsupportedOSWorksheet.write (row, (col + 4), "10 October 2023")
-            row += 1
-        if 'Windows Server 2016' in report_host_os:
-            UnsupportedOSWorksheet.write (row, col, report_ip)
-            UnsupportedOSWorksheet.write (row, (col + 1), report_fqdn)
-            UnsupportedOSWorksheet.write (row, (col + 2), report_host_os)
-            UnsupportedOSWorksheet.write (row, (col + 3), "11 January 2022")
-            UnsupportedOSWorksheet.write (row, (col + 4), "12 January 2027")
+            UnsupportedOSWorksheet.write (row, (col + 5), "10 January 2023")
             row += 1
 
         if 'Microsoft Windows XP' in report_host_os:
@@ -449,6 +438,7 @@ def extractUnsupportedOperatingSystems(nessus_scan_file):
             UnsupportedOSWorksheet.write (row, (col + 2), report_host_os)
             UnsupportedOSWorksheet.write (row, (col + 3), "13 January 2015")
             UnsupportedOSWorksheet.write (row, (col + 4), "14 January 2020")
+            UnsupportedOSWorksheet.write (row, (col + 5), "10 January 2023")
             row += 1
 
         # https://endoflife.date/
@@ -481,13 +471,6 @@ def extractUnsupportedOperatingSystems(nessus_scan_file):
             UnsupportedOSWorksheet.write (row, (col + 3), "01 October 2018")
             UnsupportedOSWorksheet.write (row, (col + 4), "02 April 2021")
             row += 1
-        if 'Ubuntu 18.04' in report_host_os:
-            UnsupportedOSWorksheet.write (row, col, report_ip)
-            UnsupportedOSWorksheet.write (row, (col + 1), report_fqdn)
-            UnsupportedOSWorksheet.write (row, (col + 2), report_host_os)
-            UnsupportedOSWorksheet.write (row, (col + 3), "30 September 2020")
-            UnsupportedOSWorksheet.write (row, (col + 4), "02 April 2023")
-            row += 1
 
         if 'CentOS Linux 6' in report_host_os:
             UnsupportedOSWorksheet.write (row, col, report_ip)
@@ -495,20 +478,6 @@ def extractUnsupportedOperatingSystems(nessus_scan_file):
             UnsupportedOSWorksheet.write (row, (col + 2), report_host_os)
             UnsupportedOSWorksheet.write (row, (col + 3), "10 May 2017")
             UnsupportedOSWorksheet.write (row, (col + 4), "30 November 2020")
-            row += 1
-        if 'CentOS Linux 7' in report_host_os:
-            UnsupportedOSWorksheet.write (row, col, report_ip)
-            UnsupportedOSWorksheet.write (row, (col + 1), report_fqdn)
-            UnsupportedOSWorksheet.write (row, (col + 2), report_host_os)
-            UnsupportedOSWorksheet.write (row, (col + 3), "06 August 2020")
-            UnsupportedOSWorksheet.write (row, (col + 4), "30 June 2024")
-            row += 1
-        if 'CentOS Linux 8' in report_host_os:
-            UnsupportedOSWorksheet.write (row, col, report_ip)
-            UnsupportedOSWorksheet.write (row, (col + 1), report_fqdn)
-            UnsupportedOSWorksheet.write (row, (col + 2), report_host_os)
-            UnsupportedOSWorksheet.write (row, (col + 3), "31 December 2021")
-            UnsupportedOSWorksheet.write (row, (col + 4), "31 December 2021")
             row += 1
 
         col = 0
@@ -537,7 +506,7 @@ parser.add_argument('--out', '-o', default='ExtractedData.xlsx', help='Name of r
 parser.add_argument('--module', '-m', type=str, default='all', 
 help=textwrap.dedent('''Comma seperated list of what data you want to extract:
 all          = Default
-hosts        = Host information 
+hosts        = Host information (also comes in .txt file for reporter import)
 patches      = Missing Microsoft security patches
 remediations = All suggested fixes
 services     = Insecure Services and their weak permissions
