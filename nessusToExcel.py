@@ -7,14 +7,17 @@ import nessus_file_reader as nfr
 # v0.2 - 27/01/2022 - Tidied up a bit, added single plugin logic and removed dir argument as xlsxwriter does not support append
 # v0.3 - 15/03/2022 - Added unencrypted protocols function. Refactored columns to Hostname / IP / Info to assist with reporter import
 # v0.4 - 15/03/2022 - Added CIS compliance extraction function. Added quiet parameter due to inputs now required
+# v0.5 - 15/03/2022 - Added HTTP Audit & Default HTTP functions
 
 # STANDARDS
 # Columns order - Hostname / IP Address / Other (Except for .txt which will be in reporter format of IP / Hostname / OS)
-# Columns width - Hostname = 40 / IP Address = 15 / Operating System = 40 / Other = variable
+# Columns width - Hostname = 40 / IP Address = 15 / Operating System = 40 / Protocol = 10 / Port = 6 / Other = variable
 
 def extractAll(nessus_scan_file):
     extractHosts(nessus_scan_file)
     extractCompliance(nessus_scan_file)
+    extractDefaultHTTP(nessus_scan_file)
+    extractHTTPServers(nessus_scan_file)
     extractMSPatches(nessus_scan_file)
     extractRemediations(nessus_scan_file)
     extractWeakServicePermissions(nessus_scan_file)
@@ -80,6 +83,130 @@ def extractHosts(nessus_scan_file):
     else:
         if args.verbose:
             print (f'DEBUG - Completed Host Information. {row} rows took {toc - tic:0.4f} seconds')
+
+def extractDefaultHTTP(nessus_scan_file):
+    root = nfr.file.nessus_scan_file_root_element(nessus_scan_file)
+    tic = time.perf_counter()
+
+    # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
+    DefaultHTTPWorksheet = workbook.add_worksheet('Default HTTP Servers')
+    DefaultHTTPWorksheet.set_column(0, 0, 40)
+    DefaultHTTPWorksheet.set_column(1, 1, 15)
+    DefaultHTTPWorksheet.set_column(2, 2, 10)
+    DefaultHTTPWorksheet.set_column(3, 3, 6)
+    DefaultHTTPWorksheet.set_column(4, 4, 60)
+    DefaultHTTPWorksheet.autofilter('A1:E1000000')
+
+    DefaultHTTPWorksheet.write (0, 0, 'Hostname')
+    DefaultHTTPWorksheet.write (0, 1, 'IP Address')
+    DefaultHTTPWorksheet.write (0, 2, 'Protocol')
+    DefaultHTTPWorksheet.write (0, 3, 'Port')
+    DefaultHTTPWorksheet.write (0, 4, 'HTTP Content')
+
+    row, col = 1, 0
+
+    for report_host in nfr.scan.report_hosts(root):
+        plugin_11422 = nfr.plugin.plugin_outputs(root, report_host, '11422')
+
+        if 'Check Audit Trail' not in plugin_11422:
+            report_ip = nfr.host.resolved_ip(report_host)
+            report_fqdn = nfr.host.resolved_fqdn(report_host)
+
+            if report_fqdn is None:
+                report_fqdn = "N/A"
+
+            lines = plugin_11422.splitlines()
+
+        report_items_per_host = nfr.host.report_items(report_host)
+        for report_item in report_items_per_host:
+            
+            plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
+            if plugin_id == 11422:
+                http_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                http_port = nfr.plugin.report_item_value(report_item, 'port')
+
+                # Write to Excel worksheet
+                DefaultHTTPWorksheet.write (row, col, report_fqdn)
+                DefaultHTTPWorksheet.write (row, (col + 1), report_ip)
+                DefaultHTTPWorksheet.write (row, (col + 2), http_protocol)
+                DefaultHTTPWorksheet.write (row, (col + 3), http_port)
+                DefaultHTTPWorksheet.write (row, (col + 4), lines[1])
+
+                row += 1
+                col = 0
+
+    toc = time.perf_counter()
+
+    # If no data has been extracted, hide the worksheet (Xlsxwriter doesn't support delete)
+    if row == 1:
+        DefaultHTTPWorksheet.hide()
+        if args.verbose:
+            print('DEBUG - No Default HTTP Servers identified, hiding workbook')
+    else:
+        if args.verbose:
+            print (f'DEBUG - Completed Default HTTP Servers. {row} rows took {toc - tic:0.4f} seconds')
+
+def extractHTTPServers(nessus_scan_file):
+    root = nfr.file.nessus_scan_file_root_element(nessus_scan_file)
+    tic = time.perf_counter()
+
+    # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
+    HTTPServerWorksheet = workbook.add_worksheet('HTTP Servers')
+    HTTPServerWorksheet.set_column(0, 0, 40)
+    HTTPServerWorksheet.set_column(1, 1, 15)
+    HTTPServerWorksheet.set_column(2, 2, 10)
+    HTTPServerWorksheet.set_column(3, 3, 6)
+    HTTPServerWorksheet.set_column(4, 4, 60)
+    HTTPServerWorksheet.autofilter('A1:E1000000')
+
+    HTTPServerWorksheet.write (0, 0, 'Hostname')
+    HTTPServerWorksheet.write (0, 1, 'IP Address')
+    HTTPServerWorksheet.write (0, 2, 'Protocol')
+    HTTPServerWorksheet.write (0, 3, 'Port')
+    HTTPServerWorksheet.write (0, 4, 'HTTP Server')
+
+    row, col = 1, 0
+
+    for report_host in nfr.scan.report_hosts(root):
+        plugin_10107 = nfr.plugin.plugin_outputs(root, report_host, '10107')
+
+        if 'Check Audit Trail' not in plugin_10107:
+            report_ip = nfr.host.resolved_ip(report_host)
+            report_fqdn = nfr.host.resolved_fqdn(report_host)
+
+            if report_fqdn is None:
+                report_fqdn = "N/A"
+
+            lines = plugin_10107.splitlines()
+
+        report_items_per_host = nfr.host.report_items(report_host)
+        for report_item in report_items_per_host:
+            
+            plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
+            if plugin_id == 10107:
+                http_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                http_port = nfr.plugin.report_item_value(report_item, 'port')
+
+                # Write to Excel worksheet
+                HTTPServerWorksheet.write (row, col, report_fqdn)
+                HTTPServerWorksheet.write (row, (col + 1), report_ip)
+                HTTPServerWorksheet.write (row, (col + 2), http_protocol)
+                HTTPServerWorksheet.write (row, (col + 3), http_port)
+                HTTPServerWorksheet.write (row, (col + 4), lines[2])
+
+                row += 1
+                col = 0
+
+    toc = time.perf_counter()
+
+    # If no data has been extracted, hide the worksheet (Xlsxwriter doesn't support delete)
+    if row == 1:
+        HTTPServerWorksheet.hide()
+        if args.verbose:
+            print('DEBUG - No HTTP Servers identified, hiding workbook')
+    else:
+        if args.verbose:
+            print (f'DEBUG - Completed HTTP Servers. {row} rows took {toc - tic:0.4f} seconds')
 
 def extractCompliance(nessus_scan_file):
     root = nfr.file.nessus_scan_file_root_element(nessus_scan_file)
@@ -636,7 +763,9 @@ parser.add_argument('--module', '-m', type=str, default='all',
 help=textwrap.dedent('''Comma seperated list of what data you want to extract:
 all          = Default
 compliance   = CIS Compliance data
+defaulthttp  = Web servers with default content
 hosts        = Host information (also comes in .txt file for reporter import)
+http         = Identify all HTTP servers and their versions
 patches      = Missing Microsoft security patches
 remediations = All suggested fixes
 services     = Insecure Services and their weak permissions
@@ -693,7 +822,7 @@ if 'compliance' in argvars['module'] or "all" in args.module:
     if args.quiet:
         if args.verbose:
             print(f'DEBUG - Taking backup of Nessus file - {os.getcwd()}{os.sep}{args.file}.bak')
-            
+
         shutil.copyfile(args.file, f'{args.file}.bak')
     else:
         comp_answer = input("To extract compliance output, changes to XML tags are required. While this should not cause any further issues, would you like to take a backup of your Nessus file first? [Y/n]")
@@ -724,8 +853,12 @@ else:
         print(f'DEBUG - Modules selected: {(argvars["module"])} ')
     if 'compliance' in argvars['module']:
         extractCompliance(args.file)
+    if 'defaulthttp' in argvars['module']:
+        extractDefaultHTTP(args.file)  
     if 'hosts' in argvars['module']:
         extractHosts(args.file)
+    if 'http' in argvars['module']:
+        extractHTTPServers(args.file)
     if 'patches' in argvars['module']:
         extractMSPatches(args.file)
     if 'remediations' in argvars['module']:
