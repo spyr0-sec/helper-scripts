@@ -5,6 +5,11 @@ import nessus_file_reader as nfr
 # CHANGELOG
 # v0.1 - 26/01/2022 - Merged all modules into one file and created wrapper
 # v0.2 - 27/01/2022 - Tidied up a bit, added single plugin logic and removed dir argument as xlsxwriter does not support append
+# v0.3 - 15/03/2022 - Added unencrypted protocols function. Refactored columns to Hostname / IP / Info to assist with reporter import
+
+# STANDARDS
+# Columns order - Hostname / IP Address / Other (Except for .txt which will be in reporter format of IP / Hostname / OS)
+# Columns width - Hostname = 40 / IP Address = 15 / Operating System = 40 / Other = variable
 
 def extractAll(nessus_scan_file):
     extractHosts(nessus_scan_file)
@@ -12,6 +17,7 @@ def extractAll(nessus_scan_file):
     extractRemediations(nessus_scan_file)
     extractWeakServicePermissions(nessus_scan_file)
     extractInstalledSoftware(nessus_scan_file)
+    extractUnencryptedProtocols(nessus_scan_file)
     extractUnquotedServicePaths(nessus_scan_file)
     extractUnsupportedOperatingSystems(nessus_scan_file)
 
@@ -21,13 +27,13 @@ def extractHosts(nessus_scan_file):
     
     # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
     hostsWorksheet = workbook.add_worksheet('Host Information')
-    hostsWorksheet.set_column(0, 0, 15)
-    hostsWorksheet.set_column(1, 1, 40)
+    hostsWorksheet.set_column(0, 0, 40)
+    hostsWorksheet.set_column(1, 1, 15)
     hostsWorksheet.set_column(2, 2, 60)
     hostsWorksheet.autofilter('A1:C1000000')
 
-    hostsWorksheet.write (0, 0, 'IP Address')
-    hostsWorksheet.write (0, 1, 'Hostname')
+    hostsWorksheet.write (0, 0, 'Hostname')
+    hostsWorksheet.write (0, 1, 'IP Address')
     hostsWorksheet.write (0, 2, 'Operating System')
 
     row, col = 1, 0
@@ -56,8 +62,8 @@ def extractHosts(nessus_scan_file):
             print(f'{report_ip} {report_fqdn} {report_host_os}', file=txt_file)
 
             # Write to Excel worksheet
-            hostsWorksheet.write (row, col, report_ip)
-            hostsWorksheet.write (row, (col + 1), report_fqdn)
+            hostsWorksheet.write (row, col, report_fqdn)
+            hostsWorksheet.write (row, (col + 1), report_ip)
             hostsWorksheet.write (row, (col + 2), report_host_os)
             row += 1
             col = 0
@@ -79,14 +85,14 @@ def extractMSPatches(nessus_scan_file):
 
     # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
     MSPatchesWorksheet = workbook.add_worksheet('Missing Microsoft Patches')
-    MSPatchesWorksheet.set_column(0, 0, 15)
-    MSPatchesWorksheet.set_column(1, 1, 40)
+    MSPatchesWorksheet.set_column(0, 0, 40)
+    MSPatchesWorksheet.set_column(1, 1, 15)
     MSPatchesWorksheet.set_column(2, 2, 22)
     MSPatchesWorksheet.set_column(3, 3, 60)
     MSPatchesWorksheet.autofilter('A1:D1000000')
 
-    MSPatchesWorksheet.write (0, 0, 'IP Address')
-    MSPatchesWorksheet.write (0, 1, 'Hostname')
+    MSPatchesWorksheet.write (0, 0, 'Hostname')
+    MSPatchesWorksheet.write (0, 1, 'IP Address')
     MSPatchesWorksheet.write (0, 2, 'Missing Security Patch')
     MSPatchesWorksheet.write (0, 3, 'Vendor Advisory')
 
@@ -110,8 +116,8 @@ def extractMSPatches(nessus_scan_file):
                     patch,advisory = line.split('(',1)
 
                     # Write to Excel worksheet
-                    MSPatchesWorksheet.write (row, col, report_ip)
-                    MSPatchesWorksheet.write (row, (col + 1), report_fqdn)
+                    MSPatchesWorksheet.write (row, col, report_fqdn)
+                    MSPatchesWorksheet.write (row, (col + 1), report_ip)
                     MSPatchesWorksheet.write (row, (col + 2), patch[3:].strip())
                     MSPatchesWorksheet.write (row, (col + 3), advisory[:-3].strip())
                     row += 1
@@ -135,13 +141,13 @@ def extractRemediations(nessus_scan_file):
 
     # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
     RemediationsWorksheet = workbook.add_worksheet('Remediations')
-    RemediationsWorksheet.set_column(0, 0, 15)
-    RemediationsWorksheet.set_column(1, 1, 40)
+    RemediationsWorksheet.set_column(0, 0, 40)
+    RemediationsWorksheet.set_column(1, 1, 15)
     RemediationsWorksheet.set_column(2, 2, 190)
     RemediationsWorksheet.autofilter('A1:C1000000')
 
-    RemediationsWorksheet.write (0, 0, 'IP Address')
-    RemediationsWorksheet.write (0, 1, 'Hostname')
+    RemediationsWorksheet.write (0, 0, 'Hostname')
+    RemediationsWorksheet.write (0, 1, 'IP Address')
     RemediationsWorksheet.write (0, 2, 'Remediation Action')
 
     row, col = 1, 0
@@ -171,8 +177,8 @@ def extractRemediations(nessus_scan_file):
                         continue
 
                     # Write to Excel worksheet
-                    RemediationsWorksheet.write (row, col, report_ip)
-                    RemediationsWorksheet.write (row, (col + 1), report_fqdn)
+                    RemediationsWorksheet.write (row, col, report_fqdn)
+                    RemediationsWorksheet.write (row, (col + 1), report_ip)
                     RemediationsWorksheet.write (row, (col + 2), fix)
                     row += 1
                     col = 0
@@ -195,16 +201,16 @@ def extractWeakServicePermissions(nessus_scan_file):
 
     # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column width
     ServicePermissionsWorksheet = workbook.add_worksheet('Insecure Service Permissions')
-    ServicePermissionsWorksheet.set_column(0, 0, 15)
-    ServicePermissionsWorksheet.set_column(1, 1, 40)
+    ServicePermissionsWorksheet.set_column(0, 0, 40)
+    ServicePermissionsWorksheet.set_column(1, 1, 15)
     ServicePermissionsWorksheet.set_column(2, 2, 50)
     ServicePermissionsWorksheet.set_column(3, 3, 85)
     ServicePermissionsWorksheet.set_column(4, 4, 35)
     ServicePermissionsWorksheet.set_column(5, 5, 30)
     ServicePermissionsWorksheet.autofilter('A1:F1000000')
 
-    ServicePermissionsWorksheet.write (0, 0, 'IP Address')
-    ServicePermissionsWorksheet.write (0, 1, 'Hostname')
+    ServicePermissionsWorksheet.write (0, 0, 'Hostname')
+    ServicePermissionsWorksheet.write (0, 1, 'IP Address')
     ServicePermissionsWorksheet.write (0, 2, 'Service Name')
     ServicePermissionsWorksheet.write (0, 3, 'Service Path')
     ServicePermissionsWorksheet.write (0, 4, 'User / Group with Write permissions')
@@ -235,8 +241,8 @@ def extractWeakServicePermissions(nessus_scan_file):
                         writeGroups= line.replace('Full control of directory allowed for groups : ','')
 
                 # Write to Excel worksheet
-                ServicePermissionsWorksheet.write (row, col, report_ip)
-                ServicePermissionsWorksheet.write (row, (col + 1), report_fqdn)
+                ServicePermissionsWorksheet.write (row, col, report_fqdn)
+                ServicePermissionsWorksheet.write (row, (col + 1), report_ip)
                 ServicePermissionsWorksheet.write (row, (col + 2), services)
                 ServicePermissionsWorksheet.write (row, (col + 3), path)
                 ServicePermissionsWorksheet.write (row, (col + 4), dirGroups)
@@ -261,13 +267,13 @@ def extractInstalledSoftware(nessus_scan_file):
 
     # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
     InstalledSoftwareWorksheet = workbook.add_worksheet('Installed Third Party Software')
-    InstalledSoftwareWorksheet.set_column(0, 0, 15)
-    InstalledSoftwareWorksheet.set_column(1, 1, 40)
+    InstalledSoftwareWorksheet.set_column(0, 0, 40)
+    InstalledSoftwareWorksheet.set_column(1, 1, 15)
     InstalledSoftwareWorksheet.set_column(2, 2, 170)
     InstalledSoftwareWorksheet.autofilter('A1:C1000000')
 
-    InstalledSoftwareWorksheet.write (0, 0, 'IP Address')
-    InstalledSoftwareWorksheet.write (0, 1, 'Hostname')
+    InstalledSoftwareWorksheet.write (0, 0, 'Hostname')
+    InstalledSoftwareWorksheet.write (0, 1, 'IP Address')
     InstalledSoftwareWorksheet.write (0, 2, 'Installed Software')
 
     row, col = 1, 0
@@ -289,8 +295,8 @@ def extractInstalledSoftware(nessus_scan_file):
                     pass
                 else:
                     # Write to Excel worksheet
-                    InstalledSoftwareWorksheet.write (row, col, report_ip)
-                    InstalledSoftwareWorksheet.write (row, (col + 1), report_fqdn)
+                    InstalledSoftwareWorksheet.write (row, col, report_fqdn)
+                    InstalledSoftwareWorksheet.write (row, (col + 1), report_ip)
                     InstalledSoftwareWorksheet.write (row, (col + 2), installed)
                     row += 1
                     col = 0
@@ -306,20 +312,76 @@ def extractInstalledSoftware(nessus_scan_file):
         if args.verbose:
             print (f'DEBUG - Completed Installed Third Party Software. {row} rows took {toc - tic:0.4f} seconds')
 
+def extractUnencryptedProtocols(nessus_scan_file):
+    root = nfr.file.nessus_scan_file_root_element(nessus_scan_file)
+    tic = time.perf_counter()
+
+    # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
+    UnencryptedProtocolsWorksheet = workbook.add_worksheet('Unencrypted Protocols')
+    UnencryptedProtocolsWorksheet.set_column(0, 0, 40)
+    UnencryptedProtocolsWorksheet.set_column(1, 1, 15)
+    UnencryptedProtocolsWorksheet.set_column(2, 2, 10)
+    UnencryptedProtocolsWorksheet.set_column(3, 3, 6)
+    UnencryptedProtocolsWorksheet.set_column(4, 4, 50)
+    UnencryptedProtocolsWorksheet.autofilter('A1:E1000000')
+
+    UnencryptedProtocolsWorksheet.write (0, 0, 'Hostname')
+    UnencryptedProtocolsWorksheet.write (0, 1, 'IP Address')
+    UnencryptedProtocolsWorksheet.write (0, 2, 'Protocol')
+    UnencryptedProtocolsWorksheet.write (0, 3, 'Port')
+    UnencryptedProtocolsWorksheet.write (0, 4, 'Description')
+
+    row, col = 1, 0
+
+    for report_host in nfr.scan.report_hosts(root):
+        report_ip = nfr.host.resolved_ip(report_host)
+        report_fqdn = nfr.host.resolved_fqdn(report_host)
+
+        report_items_per_host = nfr.host.report_items(report_host)
+        for report_item in report_items_per_host:
+            
+            plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
+            if (plugin_id == 10092 or plugin_id == 10281 or plugin_id == 54582 or plugin_id == 11819 or plugin_id == 35296
+            or plugin_id == 87733 or plugin_id == 10203 or plugin_id == 10205 or plugin_id == 10061 or plugin_id == 10198
+            or plugin_id == 10891 or plugin_id == 65792):
+                unencrypted_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                unencrypted_port = nfr.plugin.report_item_value(report_item, 'port')
+                unencrypted_description = nfr.plugin.report_item_value(report_item, 'plugin_name')
+
+                # Write to Excel worksheet
+                UnencryptedProtocolsWorksheet.write (row, col, report_fqdn)
+                UnencryptedProtocolsWorksheet.write (row, (col + 1), report_ip)
+                UnencryptedProtocolsWorksheet.write (row, (col + 2), unencrypted_protocol)
+                UnencryptedProtocolsWorksheet.write (row, (col + 3), unencrypted_port)
+                UnencryptedProtocolsWorksheet.write (row, (col + 4), unencrypted_description)
+                row += 1
+                col = 0
+
+    toc = time.perf_counter()
+
+    # If no data has been extracted, hide the worksheet (Xlsxwriter doesn't support delete)
+    if row == 1:
+        UnencryptedProtocolsWorksheet.hide()
+        if args.verbose:
+            print('DEBUG - No Unencrypted Protocols found, hiding workbook')
+    else:
+        if args.verbose:
+            print (f'DEBUG - Completed Unencrypted Protocols. {row} rows took {toc - tic:0.4f} seconds')
+
 def extractUnquotedServicePaths(nessus_scan_file):
     root = nfr.file.nessus_scan_file_root_element(nessus_scan_file)
     tic = time.perf_counter()
 
     # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
     UnquotedPathsWorksheet = workbook.add_worksheet('Unquoted Service Paths')
-    UnquotedPathsWorksheet.set_column(0, 0, 15)
-    UnquotedPathsWorksheet.set_column(1, 1, 40)
+    UnquotedPathsWorksheet.set_column(0, 0, 40)
+    UnquotedPathsWorksheet.set_column(1, 1, 15)
     UnquotedPathsWorksheet.set_column(2, 2, 40)
     UnquotedPathsWorksheet.set_column(3, 3, 140)
     UnquotedPathsWorksheet.autofilter('A1:D1000000')
 
-    UnquotedPathsWorksheet.write (0, 0, 'IP Address')
-    UnquotedPathsWorksheet.write (0, 1, 'Hostname')
+    UnquotedPathsWorksheet.write (0, 0, 'Hostname')
+    UnquotedPathsWorksheet.write (0, 1, 'IP Address')
     UnquotedPathsWorksheet.write (0, 2, 'Service Name')
     UnquotedPathsWorksheet.write (0, 3, 'Service Path')
 
@@ -342,8 +404,8 @@ def extractUnquotedServicePaths(nessus_scan_file):
                 if len(line) > 2 and 'Nessus found the following' not in line:
                     service,path = line.split(':',1)
                     # Write to Excel worksheet
-                    UnquotedPathsWorksheet.write (row, col, report_ip)
-                    UnquotedPathsWorksheet.write (row, (col + 1), report_fqdn)
+                    UnquotedPathsWorksheet.write (row, col, report_fqdn)
+                    UnquotedPathsWorksheet.write (row, (col + 1), report_ip)
                     UnquotedPathsWorksheet.write (row, (col + 2), service.strip())
                     UnquotedPathsWorksheet.write (row, (col + 3), path.strip())
                     row += 1
@@ -366,16 +428,16 @@ def extractUnsupportedOperatingSystems(nessus_scan_file):
 
     # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
     UnsupportedOSWorksheet = workbook.add_worksheet('Unsupported Operating Systems')
-    UnsupportedOSWorksheet.set_column(0, 0, 15)
-    UnsupportedOSWorksheet.set_column(1, 1, 40)
+    UnsupportedOSWorksheet.set_column(0, 0, 40)
+    UnsupportedOSWorksheet.set_column(1, 1, 15)
     UnsupportedOSWorksheet.set_column(2, 2, 55)
     UnsupportedOSWorksheet.set_column(3, 3, 31)
     UnsupportedOSWorksheet.set_column(4, 4, 29)
-    UnsupportedOSWorksheet.set_column(5, 5, 40)
+    UnsupportedOSWorksheet.set_column(5, 5, 50)
     UnsupportedOSWorksheet.autofilter('A1:F1000000')
 
-    UnsupportedOSWorksheet.write (0, 0, 'IP Address')
-    UnsupportedOSWorksheet.write (0, 1, 'Hostname')
+    UnsupportedOSWorksheet.write (0, 0, 'Hostname')
+    UnsupportedOSWorksheet.write (0, 1, 'IP Address')
     UnsupportedOSWorksheet.write (0, 2, 'Operating System')
     UnsupportedOSWorksheet.write (0, 3, 'End of Mainstream Support Date')
     UnsupportedOSWorksheet.write (0, 4, 'End of Extended Support Date')
@@ -396,22 +458,22 @@ def extractUnsupportedOperatingSystems(nessus_scan_file):
         # TODO - Clean this up, a lot of reused code
         # https://docs.microsoft.com/en-gb/lifecycle/products/
         if 'Microsoft Windows 2000' in report_host_os:
-            UnsupportedOSWorksheet.write (row, col, report_ip)
-            UnsupportedOSWorksheet.write (row, (col + 1), report_fqdn)
+            UnsupportedOSWorksheet.write (row, col, report_fqdn)
+            UnsupportedOSWorksheet.write (row, (col + 1), report_ip)
             UnsupportedOSWorksheet.write (row, (col + 2), report_host_os)
             UnsupportedOSWorksheet.write (row, (col + 3), "30 June 2005")
             UnsupportedOSWorksheet.write (row, (col + 4), "13 July 2010")
             row += 1
         if 'Microsoft Windows Server 2003' in report_host_os:
-            UnsupportedOSWorksheet.write (row, col, report_ip)
-            UnsupportedOSWorksheet.write (row, (col + 1), report_fqdn)
+            UnsupportedOSWorksheet.write (row, col, report_fqdn)
+            UnsupportedOSWorksheet.write (row, (col + 1), report_ip)
             UnsupportedOSWorksheet.write (row, (col + 2), report_host_os)
             UnsupportedOSWorksheet.write (row, (col + 3), "13 July 2010")
             UnsupportedOSWorksheet.write (row, (col + 4), "14 July 2015")
             row += 1
         if 'Microsoft Windows Server 2008' in report_host_os:
-            UnsupportedOSWorksheet.write (row, col, report_ip)
-            UnsupportedOSWorksheet.write (row, (col + 1), report_fqdn)
+            UnsupportedOSWorksheet.write (row, col, report_fqdn)
+            UnsupportedOSWorksheet.write (row, (col + 1), report_ip)
             UnsupportedOSWorksheet.write (row, (col + 2), report_host_os)
             UnsupportedOSWorksheet.write (row, (col + 3), "13 January 2015")
             UnsupportedOSWorksheet.write (row, (col + 4), "14 January 2020")
@@ -419,22 +481,22 @@ def extractUnsupportedOperatingSystems(nessus_scan_file):
             row += 1
 
         if 'Microsoft Windows XP' in report_host_os:
-            UnsupportedOSWorksheet.write (row, col, report_ip)
-            UnsupportedOSWorksheet.write (row, (col + 1), report_fqdn)
+            UnsupportedOSWorksheet.write (row, col, report_fqdn)
+            UnsupportedOSWorksheet.write (row, (col + 1), report_ip)
             UnsupportedOSWorksheet.write (row, (col + 2), report_host_os)
             UnsupportedOSWorksheet.write (row, (col + 3), "14 April 2009")
             UnsupportedOSWorksheet.write (row, (col + 4), "08 April 2014")
             row += 1
         if 'Microsoft Windows Vista' in report_host_os:
-            UnsupportedOSWorksheet.write (row, col, report_ip)
-            UnsupportedOSWorksheet.write (row, (col + 1), report_fqdn)
+            UnsupportedOSWorksheet.write (row, col, report_fqdn)
+            UnsupportedOSWorksheet.write (row, (col + 1), report_ip)
             UnsupportedOSWorksheet.write (row, (col + 2), report_host_os)
             UnsupportedOSWorksheet.write (row, (col + 3), "10 April 2012")
             UnsupportedOSWorksheet.write (row, (col + 4), "11 April 2017")
             row += 1
         if 'Microsoft Windows 7' in report_host_os:
-            UnsupportedOSWorksheet.write (row, col, report_ip)
-            UnsupportedOSWorksheet.write (row, (col + 1), report_fqdn)
+            UnsupportedOSWorksheet.write (row, col, report_fqdn)
+            UnsupportedOSWorksheet.write (row, (col + 1), report_ip)
             UnsupportedOSWorksheet.write (row, (col + 2), report_host_os)
             UnsupportedOSWorksheet.write (row, (col + 3), "13 January 2015")
             UnsupportedOSWorksheet.write (row, (col + 4), "14 January 2020")
@@ -443,38 +505,38 @@ def extractUnsupportedOperatingSystems(nessus_scan_file):
 
         # https://endoflife.date/
         if 'VMware ESXi 5.5' in report_host_os:
-            UnsupportedOSWorksheet.write (row, col, report_ip)
-            UnsupportedOSWorksheet.write (row, (col + 1), report_fqdn)
+            UnsupportedOSWorksheet.write (row, col, report_fqdn)
+            UnsupportedOSWorksheet.write (row, (col + 1), report_ip)
             UnsupportedOSWorksheet.write (row, (col + 2), report_host_os)
             UnsupportedOSWorksheet.write (row, (col + 3), "19 September 2015")
             UnsupportedOSWorksheet.write (row, (col + 4), "19 September 2020")
             row += 1
         if 'VMware ESXi 6.0' in report_host_os:
-            UnsupportedOSWorksheet.write (row, col, report_ip)
-            UnsupportedOSWorksheet.write (row, (col + 1), report_fqdn)
+            UnsupportedOSWorksheet.write (row, col, report_fqdn)
+            UnsupportedOSWorksheet.write (row, (col + 1), report_ip)
             UnsupportedOSWorksheet.write (row, (col + 2), report_host_os)
             UnsupportedOSWorksheet.write (row, (col + 3), "12 March 2018")
             UnsupportedOSWorksheet.write (row, (col + 4), "12 March 2022")
             row += 1
 
         if 'Ubuntu 14.04' in report_host_os:
-            UnsupportedOSWorksheet.write (row, col, report_ip)
-            UnsupportedOSWorksheet.write (row, (col + 1), report_fqdn)
+            UnsupportedOSWorksheet.write (row, col, report_fqdn)
+            UnsupportedOSWorksheet.write (row, (col + 1), report_ip)
             UnsupportedOSWorksheet.write (row, (col + 2), report_host_os)
             UnsupportedOSWorksheet.write (row, (col + 3), "30 September 2016")
             UnsupportedOSWorksheet.write (row, (col + 4), "02 April 2019")
             row += 1
         if 'Ubuntu 16.04' in report_host_os:
-            UnsupportedOSWorksheet.write (row, col, report_ip)
-            UnsupportedOSWorksheet.write (row, (col + 1), report_fqdn)
+            UnsupportedOSWorksheet.write (row, col, report_fqdn)
+            UnsupportedOSWorksheet.write (row, (col + 1), report_ip)
             UnsupportedOSWorksheet.write (row, (col + 2), report_host_os)
             UnsupportedOSWorksheet.write (row, (col + 3), "01 October 2018")
             UnsupportedOSWorksheet.write (row, (col + 4), "02 April 2021")
             row += 1
 
         if 'CentOS Linux 6' in report_host_os:
-            UnsupportedOSWorksheet.write (row, col, report_ip)
-            UnsupportedOSWorksheet.write (row, (col + 1), report_fqdn)
+            UnsupportedOSWorksheet.write (row, col, report_fqdn)
+            UnsupportedOSWorksheet.write (row, (col + 1), report_ip)
             UnsupportedOSWorksheet.write (row, (col + 2), report_host_os)
             UnsupportedOSWorksheet.write (row, (col + 3), "10 May 2017")
             UnsupportedOSWorksheet.write (row, (col + 4), "30 November 2020")
@@ -511,6 +573,7 @@ patches      = Missing Microsoft security patches
 remediations = All suggested fixes
 services     = Insecure Services and their weak permissions
 software     = Installed third party software (warning: can be heavy!)
+unencrypted  = Unencrypted protocols in use. FTP, Telnet etc.
 unquoted     = Unquoted service paths and their weak permissions
 unsupported  = Unsupported operating systems
 '''))
@@ -558,6 +621,8 @@ else:
             extractWeakServicePermissions(args.file)
         if 'software' in argvars['module']:
             extractInstalledSoftware(args.file)
+        if 'unencrypted' in argvars['module']:
+            extractUnencryptedProtocols(args.file)
         if 'unquoted' in argvars['module']:
             extractUnquotedServicePaths(args.file)
         if 'unsupported' in argvars['module']:
