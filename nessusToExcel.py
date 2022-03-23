@@ -8,13 +8,15 @@ import nessus_file_reader as nfr
 # v0.3 - 15/03/2022 - Added unencrypted protocols function. Refactored columns to Hostname / IP / Info to assist with reporter import
 # v0.4 - 15/03/2022 - Added CIS compliance extraction function. Added quiet parameter due to inputs now required
 # v0.5 - 15/03/2022 - Added HTTP Audit & Default HTTP functions
+# v0.6 - 23/03/2022 - Added all issues worksheet
 
 # STANDARDS
-# Columns order - Hostname / IP Address / Other (Except for .txt which will be in reporter format of IP / Hostname / OS)
+# Columns order - Hostname / IP Address / Other (Except for hosts which will be in reporter format of IP / Hostname / OS)
 # Columns width - Hostname = 40 / IP Address = 15 / Operating System = 40 / Protocol = 10 / Port = 6 / Other = variable
 
 def extractAll(nessus_scan_file):
     extractHosts(nessus_scan_file)
+    extractIssues(nessus_scan_file)
     extractCompliance(nessus_scan_file)
     extractDefaultHTTP(nessus_scan_file)
     extractHTTPServers(nessus_scan_file)
@@ -32,13 +34,13 @@ def extractHosts(nessus_scan_file):
     
     # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
     HostsWorksheet = workbook.add_worksheet('Host Information')
-    HostsWorksheet.set_column(0, 0, 40)
-    HostsWorksheet.set_column(1, 1, 15)
+    HostsWorksheet.set_column(0, 0, 15)
+    HostsWorksheet.set_column(1, 1, 40)
     HostsWorksheet.set_column(2, 2, 60)
     HostsWorksheet.autofilter('A1:C1000000')
 
-    HostsWorksheet.write (0, 0, 'Hostname')
-    HostsWorksheet.write (0, 1, 'IP Address')
+    HostsWorksheet.write (0, 0, 'IP Address')
+    HostsWorksheet.write (0, 1, 'Hostname')
     HostsWorksheet.write (0, 2, 'Operating System')
 
     row, col = 1, 0
@@ -67,8 +69,8 @@ def extractHosts(nessus_scan_file):
             print(f'{report_ip} {report_fqdn} {report_host_os}', file=txt_file)
 
             # Write to Excel worksheet
-            HostsWorksheet.write (row, col, report_fqdn)
-            HostsWorksheet.write (row, (col + 1), report_ip)
+            HostsWorksheet.write (row, col, report_ip)
+            HostsWorksheet.write (row, (col + 1), report_fqdn)
             HostsWorksheet.write (row, (col + 2), report_host_os)
             row += 1
             col = 0
@@ -83,6 +85,67 @@ def extractHosts(nessus_scan_file):
     else:
         if args.verbose:
             print (f'DEBUG - Completed Host Information. {row} rows took {toc - tic:0.4f} seconds')
+
+def extractIssues(nessus_scan_file):
+    root = nfr.file.nessus_scan_file_root_element(nessus_scan_file)
+
+    tic = time.perf_counter()
+
+    # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
+    IssuesWorksheet = workbook.add_worksheet('All Issues')
+    IssuesWorksheet.set_column(0, 0, 40)
+    IssuesWorksheet.set_column(1, 1, 15)
+    IssuesWorksheet.set_column(2, 2, 10)
+    IssuesWorksheet.set_column(3, 3, 6)
+    IssuesWorksheet.set_column(4, 4, 8)
+    IssuesWorksheet.set_column(5, 5, 100)
+    IssuesWorksheet.set_column(6, 6, 30)
+    IssuesWorksheet.autofilter('A1:G1000000')
+
+    IssuesWorksheet.write (0, 0, 'Hostname')
+    IssuesWorksheet.write (0, 1, 'IP Address')
+    IssuesWorksheet.write (0, 2, 'Protocol')
+    IssuesWorksheet.write (0, 3, 'Port')
+    IssuesWorksheet.write (0, 4, 'Risk')
+    IssuesWorksheet.write (0, 5, 'Issue')
+    IssuesWorksheet.write (0, 6, 'Reporter Issue')
+
+    row, col = 1, 0
+
+    for report_host in nfr.scan.report_hosts(root):
+        report_ip = nfr.host.resolved_ip(report_host)
+        report_fqdn = nfr.host.resolved_fqdn(report_host)
+
+        report_items_per_host = nfr.host.report_items(report_host)
+        for report_item in report_items_per_host:
+            
+            risk_factor = nfr.plugin.report_item_value(report_item, 'risk_factor')
+
+            if risk_factor != "None":
+                issue_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                issue_port = nfr.plugin.report_item_value(report_item, 'port')
+                issue_description = nfr.plugin.report_item_value(report_item, 'plugin_name')
+
+                # Write to Excel worksheet
+                IssuesWorksheet.write (row, col, report_fqdn)
+                IssuesWorksheet.write (row, (col + 1), report_ip)
+                IssuesWorksheet.write (row, (col + 2), issue_protocol)                
+                IssuesWorksheet.write (row, (col + 3), issue_port)
+                IssuesWorksheet.write (row, (col + 4), risk_factor)
+                IssuesWorksheet.write (row, (col + 5), issue_description)
+                row += 1
+                col = 0
+
+    toc = time.perf_counter()
+
+    # If no data has been extracted, hide the worksheet (Xlsxwriter doesn't support delete)
+    if row == 1:
+        IssuesWorksheet.hide()
+        if args.verbose:
+            print('DEBUG - No security issues found, hiding workbook')
+    else:
+        if args.verbose:
+            print (f'DEBUG - Completed Issues. {row} rows took {toc - tic:0.4f} seconds')
 
 def extractDefaultHTTP(nessus_scan_file):
     root = nfr.file.nessus_scan_file_root_element(nessus_scan_file)
@@ -766,6 +829,7 @@ compliance   = CIS Compliance data
 defaulthttp  = Web servers with default content
 hosts        = Host information (also comes in .txt file for reporter import)
 http         = Identify all HTTP servers and their versions
+issues       = Present all non-info issues
 patches      = Missing Microsoft security patches
 remediations = All suggested fixes
 services     = Insecure Services and their weak permissions
@@ -819,18 +883,23 @@ argvars['module'] = [mod.strip() for mod in argvars['module'].split(",")]
 if 'compliance' in argvars['module'] or "all" in args.module:
 
     # Will ask user if they would like to take a backup of the Nessus file first as we are manipulating it
-    if args.quiet:
-        if args.verbose:
-            print(f'DEBUG - Taking backup of Nessus file - {os.getcwd()}{os.sep}{args.file}.bak')
-
-        shutil.copyfile(args.file, f'{args.file}.bak')
-    else:
-        comp_answer = input("To extract compliance output, changes to XML tags are required. While this should not cause any further issues, would you like to take a backup of your Nessus file first? [Y/n]")
-        if comp_answer == 'Y' or comp_answer == 'Yes' or comp_answer == 'y' or comp_answer == 'yes' or comp_answer == '':
+    backupPath = os.getcwd() + os.sep + f'{args.file}.bak'
+    if not os.path.isfile(backupPath):
+        if args.quiet:
             if args.verbose:
                 print(f'DEBUG - Taking backup of Nessus file - {os.getcwd()}{os.sep}{args.file}.bak')
 
             shutil.copyfile(args.file, f'{args.file}.bak')
+        else:
+            comp_answer = input("To extract compliance output, changes to XML tags are required. While this should not cause any further issues, would you like to take a backup of your Nessus file first? [Y/n]")
+            if comp_answer == 'Y' or comp_answer == 'Yes' or comp_answer == 'y' or comp_answer == 'yes' or comp_answer == '':
+                if args.verbose:
+                    print(f'DEBUG - Taking backup of Nessus file - {os.getcwd()}{os.sep}{args.file}.bak')
+
+                shutil.copyfile(args.file, f'{args.file}.bak')
+    else:
+        if args.verbose:
+            print(f'DEBUG - Nessus backup file already exists, continuing')
 
     # nfr could not handle the cm namespace within the compliance results. Once these are removed extraction has no issues
     search_text = "cm:compliance-"
@@ -851,6 +920,8 @@ if "all" in args.module:
 else:
     if args.verbose:
         print(f'DEBUG - Modules selected: {(argvars["module"])} ')
+    
+    # TODO - make into switch statement as currently invalid modules will be omitted without warning
     if 'compliance' in argvars['module']:
         extractCompliance(args.file)
     if 'defaulthttp' in argvars['module']:
@@ -859,6 +930,8 @@ else:
         extractHosts(args.file)
     if 'http' in argvars['module']:
         extractHTTPServers(args.file)
+    if 'issues' in argvars['module']:
+        extractIssues(args.file)    
     if 'patches' in argvars['module']:
         extractMSPatches(args.file)
     if 'remediations' in argvars['module']:
@@ -873,8 +946,8 @@ else:
         extractUnquotedServicePaths(args.file)
     if 'unsupported' in argvars['module']:
         extractUnsupportedOperatingSystems(args.file)
-    else:
-        print('Invalid module provided. Omitting')
+    #else:
+    #    print('Invalid module provided. Omitting')
 
 toc = time.perf_counter()
 print (f'COMPLETED! Output can be found in {excelPath}. Total time taken: {toc - tic:0.4f} seconds')
