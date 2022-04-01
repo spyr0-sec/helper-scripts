@@ -12,6 +12,7 @@ import nessus_file_reader as nfr
 # v0.7 - 30/03/2022 - Added more unsupported OS. Added impact column to remidiations workbook.
 #                   - Added logic to seek WMI / Hostnames is Nessus has failed to obtain FQDN, added noresolve flag as comes at a performance hit
 #                   - Added LastUpdated module which pulls each Windows latest effective update level. Added exploitability column to unquoted paths
+# v0.8 - 01/04/2022 - Added SSH Weak Algorithms Module
 
 # STANDARDS
 # Columns order - Hostname / IP Address / Other (Except for hosts which will be in reporter format of IP / Hostname / OS)
@@ -26,11 +27,12 @@ def extractAll(nessus_scan_file):
     extractLastUpdated(nessus_scan_file)
     extractMSPatches(nessus_scan_file)
     extractRemediations(nessus_scan_file)
-    extractWeakServicePermissions(nessus_scan_file)
     extractInstalledSoftware(nessus_scan_file)
+    extractSSHWeakAlgorithms(nessus_scan_file)
     extractUnencryptedProtocols(nessus_scan_file)
     extractUnquotedServicePaths(nessus_scan_file)
     extractUnsupportedOperatingSystems(nessus_scan_file)
+    extractWeakServicePermissions(nessus_scan_file)
 
 # Extract system information
 def extractHosts(nessus_scan_file):
@@ -175,6 +177,86 @@ def extractIssues(nessus_scan_file):
     else:
         if args.verbose:
             print (f'DEBUG - Completed Issues. {row} rows took {toc - tic:0.4f} seconds')
+
+# Extract and format CIS Compliance results
+def extractCompliance(nessus_scan_file):
+    root = nfr.file.nessus_scan_file_root_element(nessus_scan_file)
+
+    tic = time.perf_counter()
+
+    # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
+    ComplianceWorksheet = workbook.add_worksheet('Compliance')
+    ComplianceWorksheet.set_column(0, 0, 40)
+    ComplianceWorksheet.set_column(1, 1, 15)
+    ComplianceWorksheet.set_column(2, 2, 17)
+    ComplianceWorksheet.set_column(3, 3, 8)
+    ComplianceWorksheet.set_column(4, 4, 55)
+    ComplianceWorksheet.set_column(5, 5, 55)
+    ComplianceWorksheet.set_column(6, 6, 200)
+    ComplianceWorksheet.autofilter('A1:G1000000')
+
+    ComplianceWorksheet.write (0, 0, 'Hostname')
+    ComplianceWorksheet.write (0, 1, 'IP Address')
+    ComplianceWorksheet.write (0, 2, 'CIS Benchmark ID')
+    ComplianceWorksheet.write (0, 3, 'Result')
+    ComplianceWorksheet.write (0, 4, 'Assessed Host value')
+    ComplianceWorksheet.write (0, 5, 'CIS Policy value')
+    ComplianceWorksheet.write (0, 6, 'Description')
+
+    row, col = 1, 0
+
+    for report_host in nfr.scan.report_hosts(root):
+        report_ip = nfr.host.resolved_ip(report_host)
+        report_fqdn = nfr.host.resolved_fqdn(report_host)
+
+        report_items_per_host = nfr.host.report_items(report_host)
+        for report_item in report_items_per_host:
+
+            # If Nessus can't resolve the hostname get it from Device Hostname plugin
+            if not args.noresolve:
+                if report_fqdn is None:
+                    plugin_55472 = nfr.plugin.plugin_outputs(root, report_host, '55472')
+                    hostname_plugin = io.StringIO(plugin_55472)
+                    for line in hostname_plugin.getvalue().split('\n'):
+                        if 'Hostname : ' in line:
+                            report_fqdn = line.replace('  Hostname : ','')
+                            break
+                        else:
+                            report_fqdn = "N/A"
+            else:
+                if report_fqdn is None:
+                    report_fqdn = "N/A"
+            
+            plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
+            if plugin_id == 21156:
+                compliance_host_value = nfr.plugin.report_item_value(report_item, 'compliance-actual-value')
+                compliance_policy_value = nfr.plugin.report_item_value(report_item, 'compliance-policy-value')
+                compliance_desc = nfr.plugin.report_item_value(report_item, 'compliance-check-name')
+                compliance_result = nfr.plugin.report_item_value(report_item, 'compliance-result')
+
+                compliance_id,compliance_name = compliance_desc.split(' ',1)
+
+                # Write to Excel worksheet
+                ComplianceWorksheet.write (row, col, report_fqdn)
+                ComplianceWorksheet.write (row, (col + 1), report_ip)
+                ComplianceWorksheet.write (row, (col + 2), compliance_id)                
+                ComplianceWorksheet.write (row, (col + 3), compliance_result)
+                ComplianceWorksheet.write (row, (col + 4), compliance_host_value)
+                ComplianceWorksheet.write (row, (col + 5), compliance_policy_value)
+                ComplianceWorksheet.write (row, (col + 6), compliance_name)
+                row += 1
+                col = 0
+
+    toc = time.perf_counter()
+
+    # If no data has been extracted, hide the worksheet (Xlsxwriter doesn't support delete)
+    if row == 1:
+        ComplianceWorksheet.hide()
+        if args.verbose:
+            print('DEBUG - No Compliance checks found, hiding workbook')
+    else:
+        if args.verbose:
+            print (f'DEBUG - Completed Compliance. {row} rows took {toc - tic:0.4f} seconds')
 
 # Extract all Default HTTP instances
 def extractDefaultHTTP(nessus_scan_file):
@@ -325,86 +407,6 @@ def extractHTTPServers(nessus_scan_file):
     else:
         if args.verbose:
             print (f'DEBUG - Completed HTTP Servers. {row} rows took {toc - tic:0.4f} seconds')
-
-# Extract and format CIS Compliance results
-def extractCompliance(nessus_scan_file):
-    root = nfr.file.nessus_scan_file_root_element(nessus_scan_file)
-
-    tic = time.perf_counter()
-
-    # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
-    ComplianceWorksheet = workbook.add_worksheet('Compliance')
-    ComplianceWorksheet.set_column(0, 0, 40)
-    ComplianceWorksheet.set_column(1, 1, 15)
-    ComplianceWorksheet.set_column(2, 2, 17)
-    ComplianceWorksheet.set_column(3, 3, 8)
-    ComplianceWorksheet.set_column(4, 4, 55)
-    ComplianceWorksheet.set_column(5, 5, 55)
-    ComplianceWorksheet.set_column(6, 6, 200)
-    ComplianceWorksheet.autofilter('A1:G1000000')
-
-    ComplianceWorksheet.write (0, 0, 'Hostname')
-    ComplianceWorksheet.write (0, 1, 'IP Address')
-    ComplianceWorksheet.write (0, 2, 'CIS Benchmark ID')
-    ComplianceWorksheet.write (0, 3, 'Result')
-    ComplianceWorksheet.write (0, 4, 'Assessed Host value')
-    ComplianceWorksheet.write (0, 5, 'CIS Policy value')
-    ComplianceWorksheet.write (0, 6, 'Description')
-
-    row, col = 1, 0
-
-    for report_host in nfr.scan.report_hosts(root):
-        report_ip = nfr.host.resolved_ip(report_host)
-        report_fqdn = nfr.host.resolved_fqdn(report_host)
-
-        report_items_per_host = nfr.host.report_items(report_host)
-        for report_item in report_items_per_host:
-
-            # If Nessus can't resolve the hostname get it from Device Hostname plugin
-            if not args.noresolve:
-                if report_fqdn is None:
-                    plugin_55472 = nfr.plugin.plugin_outputs(root, report_host, '55472')
-                    hostname_plugin = io.StringIO(plugin_55472)
-                    for line in hostname_plugin.getvalue().split('\n'):
-                        if 'Hostname : ' in line:
-                            report_fqdn = line.replace('  Hostname : ','')
-                            break
-                        else:
-                            report_fqdn = "N/A"
-            else:
-                if report_fqdn is None:
-                    report_fqdn = "N/A"
-            
-            plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
-            if plugin_id == 21156:
-                compliance_host_value = nfr.plugin.report_item_value(report_item, 'compliance-actual-value')
-                compliance_policy_value = nfr.plugin.report_item_value(report_item, 'compliance-policy-value')
-                compliance_desc = nfr.plugin.report_item_value(report_item, 'compliance-check-name')
-                compliance_result = nfr.plugin.report_item_value(report_item, 'compliance-result')
-
-                compliance_id,compliance_name = compliance_desc.split(' ',1)
-
-                # Write to Excel worksheet
-                ComplianceWorksheet.write (row, col, report_fqdn)
-                ComplianceWorksheet.write (row, (col + 1), report_ip)
-                ComplianceWorksheet.write (row, (col + 2), compliance_id)                
-                ComplianceWorksheet.write (row, (col + 3), compliance_result)
-                ComplianceWorksheet.write (row, (col + 4), compliance_host_value)
-                ComplianceWorksheet.write (row, (col + 5), compliance_policy_value)
-                ComplianceWorksheet.write (row, (col + 6), compliance_name)
-                row += 1
-                col = 0
-
-    toc = time.perf_counter()
-
-    # If no data has been extracted, hide the worksheet (Xlsxwriter doesn't support delete)
-    if row == 1:
-        ComplianceWorksheet.hide()
-        if args.verbose:
-            print('DEBUG - No Compliance checks found, hiding workbook')
-    else:
-        if args.verbose:
-            print (f'DEBUG - Completed Compliance. {row} rows took {toc - tic:0.4f} seconds')
 
 # Determine when Windows system security patch levels
 def extractLastUpdated(nessus_scan_file):
@@ -622,90 +624,6 @@ def extractRemediations(nessus_scan_file):
         if args.verbose:
             print (f'DEBUG - Completed Remediations. {row} rows took {toc - tic:0.4f} seconds')
 
-# Identitfy all Windows services with weak permissions
-def extractWeakServicePermissions(nessus_scan_file):
-    root = nfr.file.nessus_scan_file_root_element(nessus_scan_file)
-    tic = time.perf_counter()
-    path = services = dirGroups = writeGroups = ''
-
-    # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column width
-    ServicePermissionsWorksheet = workbook.add_worksheet('Insecure Service Permissions')
-    ServicePermissionsWorksheet.set_column(0, 0, 40)
-    ServicePermissionsWorksheet.set_column(1, 1, 15)
-    ServicePermissionsWorksheet.set_column(2, 2, 50)
-    ServicePermissionsWorksheet.set_column(3, 3, 85)
-    ServicePermissionsWorksheet.set_column(4, 4, 35)
-    ServicePermissionsWorksheet.set_column(5, 5, 30)
-    ServicePermissionsWorksheet.autofilter('A1:F1000000')
-
-    ServicePermissionsWorksheet.write (0, 0, 'Hostname')
-    ServicePermissionsWorksheet.write (0, 1, 'IP Address')
-    ServicePermissionsWorksheet.write (0, 2, 'Service Name')
-    ServicePermissionsWorksheet.write (0, 3, 'Service Path')
-    ServicePermissionsWorksheet.write (0, 4, 'User / Group with Write permissions')
-    ServicePermissionsWorksheet.write (0, 5, 'User / Group with Full Control')
-
-    row, col = 1, 0
-
-    for report_host in nfr.scan.report_hosts(root):
-        report_ip = nfr.host.resolved_ip(report_host)
-        report_fqdn = nfr.host.resolved_fqdn(report_host)
-        
-        plugin_65057 = nfr.plugin.plugin_outputs(root, report_host, '65057')
-        if 'Check Audit Trail' not in plugin_65057:
-
-            # If Nessus can't resolve the hostname get it from Device Hostname plugin
-            if not args.noresolve:
-                if report_fqdn is None:
-                    plugin_55472 = nfr.plugin.plugin_outputs(root, report_host, '55472')
-                    hostname_plugin = io.StringIO(plugin_55472)
-                    for line in hostname_plugin.getvalue().split('\n'):
-                        if 'Hostname : ' in line:
-                            report_fqdn = line.replace('  Hostname : ','')
-                            break
-                        else:
-                            report_fqdn = "N/A"
-            else:
-                if report_fqdn is None:
-                    report_fqdn = "N/A"
-            
-            items = plugin_65057.split("\n\n")
-            for item in items:
-                lines = item.splitlines()
-
-                for line in lines:
-                    if ',' in line:
-                        line=line.replace(',',' &')
-                    if 'Path' in line:
-                        path=line.replace('Path : ','')
-                    if 'Used by services' in line:
-                        services=line.replace('Used by services : ','')
-                    if 'File write allowed' in line:
-                        dirGroups= line.replace('File write allowed for groups : ','')
-                    if 'Full control of directory' in line:
-                        writeGroups= line.replace('Full control of directory allowed for groups : ','')
-
-                # Write to Excel worksheet
-                ServicePermissionsWorksheet.write (row, col, report_fqdn)
-                ServicePermissionsWorksheet.write (row, (col + 1), report_ip)
-                ServicePermissionsWorksheet.write (row, (col + 2), services)
-                ServicePermissionsWorksheet.write (row, (col + 3), path)
-                ServicePermissionsWorksheet.write (row, (col + 4), dirGroups)
-                ServicePermissionsWorksheet.write (row, (col + 5), writeGroups)
-                row += 1
-                col = 0
-
-    toc = time.perf_counter()
-
-    # If no data has been extracted, hide the worksheet (Xlsxwriter doesn't support delete)
-    if row == 1:
-        ServicePermissionsWorksheet.hide()
-        if args.verbose:
-            print('DEBUG - No Weak Service Permissions found, hiding workbook')
-    else:
-        if args.verbose:
-            print (f'DEBUG - Completed Weak Service Permissions. {row} rows took {toc - tic:0.4f} seconds')
-
 # Perform software audit on all Windows machines
 def extractInstalledSoftware(nessus_scan_file):
     root = nfr.file.nessus_scan_file_root_element(nessus_scan_file)
@@ -773,6 +691,164 @@ def extractInstalledSoftware(nessus_scan_file):
     else:
         if args.verbose:
             print (f'DEBUG - Completed Installed Third Party Software. {row} rows took {toc - tic:0.4f} seconds')
+
+# Extract all Weak Algorithms and Ciphers being used by SSH services
+def extractSSHWeakAlgorithms(nessus_scan_file):
+    root = nfr.file.nessus_scan_file_root_element(nessus_scan_file)
+    tic = time.perf_counter()
+
+    # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
+    WeakSSHWorksheet = workbook.add_worksheet('Weak SSH Algorithms')
+    WeakSSHWorksheet.set_column(0, 0, 40)
+    WeakSSHWorksheet.set_column(1, 1, 15)
+    WeakSSHWorksheet.set_column(2, 2, 10)
+    WeakSSHWorksheet.set_column(3, 3, 6)
+    WeakSSHWorksheet.set_column(4, 4, 27)
+    WeakSSHWorksheet.set_column(5, 5, 33)
+    WeakSSHWorksheet.set_column(6, 6, 33)
+    WeakSSHWorksheet.set_column(7, 7, 44)
+    WeakSSHWorksheet.autofilter('A1:H1000000')
+
+    WeakSSHWorksheet.write (0, 0, 'Hostname')
+    WeakSSHWorksheet.write (0, 1, 'IP Address')
+    WeakSSHWorksheet.write (0, 2, 'Protocol')
+    WeakSSHWorksheet.write (0, 3, 'Port')
+    WeakSSHWorksheet.write (0, 4, 'Weak Encryption Algorithm')
+    WeakSSHWorksheet.write (0, 5, 'Weak Key Exchange Algorithm')
+    WeakSSHWorksheet.write (0, 6, 'Weak Cipher Block Chaining Cipher')
+    WeakSSHWorksheet.write (0, 7, 'Weak Message Authentication Code Algorithm')
+
+    # Initialize some variables
+    row, col = 1, 0
+    current_ip = ''
+    enc_algorithms = []; keyex_algorithms = []; cbc_algorithms = []; mac_algorithms = []
+
+    for report_host in nfr.scan.report_hosts(root):
+        enc_plugin = nfr.plugin.plugin_outputs(root, report_host, '90317')
+        keyex_plugin = nfr.plugin.plugin_outputs(root, report_host, '153953')
+        cbc_plugin = nfr.plugin.plugin_outputs(root, report_host, '70658')
+        mac_plugin = nfr.plugin.plugin_outputs(root, report_host, '71049')
+
+        if ('Check Audit Trail' not in enc_plugin) or ('Check Audit Trail' not in keyex_plugin) or ('Check Audit Trail' not in cbc_plugin) or ('Check Audit Trail' not in mac_plugin):
+            report_ip = nfr.host.resolved_ip(report_host)
+            report_fqdn = nfr.host.resolved_fqdn(report_host)
+
+            # If Nessus can't resolve the hostname get it from Device Hostname plugin
+            if not args.noresolve:
+                if report_fqdn is None:
+                    plugin_55472 = nfr.plugin.plugin_outputs(root, report_host, '55472')
+                    hostname_plugin = io.StringIO(plugin_55472)
+                    for line in hostname_plugin.getvalue().split('\n'):
+                        if 'Hostname : ' in line:
+                            report_fqdn = line.replace('  Hostname : ','')
+                            break
+                        else:
+                            report_fqdn = "N/A"
+            else:
+                if report_fqdn is None:
+                    report_fqdn = "N/A"
+
+            report_items_per_host = nfr.host.report_items(report_host)
+            for report_item in report_items_per_host:
+                
+                plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
+                if plugin_id == 90317 or plugin_id == 153953 or plugin_id == 70658 or plugin_id == 71049:
+                    # Weak encryption ciphers
+                    if plugin_id == 90317:
+
+                        enc_output = enc_plugin.splitlines()
+                        for enc_algorithm in enc_output:
+                            if 'The following weak' not in enc_algorithm and 'Check Audit Trail' not in enc_algorithm and len(enc_algorithm) != 0:
+                                if enc_algorithm.strip() not in enc_algorithms:
+                                    enc_algorithms.append(enc_algorithm.strip())
+
+                    # Weak key exchange ciphers
+                    if plugin_id == 153953:                  
+                        
+                        keyex_output = keyex_plugin.splitlines()
+                        for keyex_algorithm in keyex_output:
+                            if 'The following weak key exchange' not in keyex_algorithm and 'Check Audit Trail' not in keyex_algorithm and len(keyex_algorithm) != 0:
+                                if keyex_algorithm.strip() not in keyex_algorithms:                            
+                                    keyex_algorithms.append(keyex_algorithm.strip())
+                    
+                    # Weak CBC ciphers
+                    if plugin_id == 70658:                       
+                        
+                        cbc_output = cbc_plugin.splitlines()
+                        for cbc_algorithm in cbc_output:
+                            if 'The following' not in cbc_algorithm and 'are supported :' not in cbc_algorithm and 'Check Audit Trail' not in cbc_algorithm and len(cbc_algorithm) != 0:
+                                if cbc_algorithm.strip() not in cbc_algorithms:
+                                    cbc_algorithms.append(cbc_algorithm.strip())
+
+                    # Weak MAC ciphers
+                    if plugin_id == 71049:                   
+                        mac_output = mac_plugin.splitlines()
+
+                        for mac_algorithm in mac_output:
+                            if 'The following' not in mac_algorithm and 'are supported :' not in mac_algorithm and 'Check Audit Trail' not in mac_algorithm and len(mac_algorithm) != 0:
+                                if mac_algorithm.strip() not in mac_algorithms:
+                                    mac_algorithms.append(mac_algorithm.strip())
+
+                    # Work out the largest array to know how many times to print weak algorithms                    
+                    if current_ip is not report_ip:
+                        num_of_algorithms = []
+                        num_of_algorithms.extend((len(enc_algorithms), len(keyex_algorithms), len(cbc_algorithms), len(mac_algorithms)))
+
+                        for idx in range(0, max(num_of_algorithms)):
+                            ssh_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                            ssh_port = nfr.plugin.report_item_value(report_item, 'port')
+                            WeakSSHWorksheet.write (row, (col + 1), report_ip)
+                            WeakSSHWorksheet.write (row, (col + 2), ssh_protocol)
+                            WeakSSHWorksheet.write (row, (col + 3), ssh_port)
+
+                            # Need to make all 4 lists the same size during runtime
+                            try:
+                                if enc_algorithms[idx]:
+                                    WeakSSHWorksheet.write (row, (col + 4), enc_algorithms[idx])
+                            except IndexError:
+                                for _ in range(max(num_of_algorithms)):
+                                    enc_algorithms.append('')
+
+                            try:
+                                if keyex_algorithms[idx]:
+                                    WeakSSHWorksheet.write (row, (col + 5), keyex_algorithms[idx])
+                            except IndexError:
+                                for _ in range(max(num_of_algorithms)):
+                                    keyex_algorithms.append('')
+
+                            try:
+                                if cbc_algorithms[idx]:
+                                    WeakSSHWorksheet.write (row, (col + 6), cbc_algorithms[idx])
+                            except IndexError:
+                                for _ in range(max(num_of_algorithms)):
+                                    enc_algorithms.append('')
+
+                            try:
+                                if mac_algorithms[idx]:
+                                    WeakSSHWorksheet.write (row, (col + 7), mac_algorithms[idx])
+                            except IndexError:
+                                for _ in range(max(num_of_algorithms)):
+                                    mac_algorithms.append('')
+
+                            row += 1
+                            col = 0
+                        
+                        # Re-initialise the arrays for next IP
+                        enc_algorithms = []; keyex_algorithms = []; cbc_algorithms = []; mac_algorithms = []
+
+                    # Keep track of which IP address we are working with
+                    current_ip = report_ip
+
+    toc = time.perf_counter()
+
+    # If no data has been extracted, hide the worksheet (Xlsxwriter doesn't support delete)
+    if row == 1:
+        WeakSSHWorksheet.hide()
+        if args.verbose:
+            print('DEBUG - No Weak SSH Algorithms or Ciphers identified, hiding workbook')
+    else:
+        if args.verbose:
+            print (f'DEBUG - Completed Weak SSH Algorithms and Ciphers. {row} rows took {toc - tic:0.4f} seconds')
 
 # Identify all unencrypted protcols in use
 def extractUnencryptedProtocols(nessus_scan_file):
@@ -1072,6 +1148,90 @@ def extractUnsupportedOperatingSystems(nessus_scan_file):
         if args.verbose:
             print (f'DEBUG - Completed Unsupported Operating Systems. {row} rows took {toc - tic:0.4f} seconds')
 
+# Identitfy all Windows services with weak permissions
+def extractWeakServicePermissions(nessus_scan_file):
+    root = nfr.file.nessus_scan_file_root_element(nessus_scan_file)
+    tic = time.perf_counter()
+    path = services = dirGroups = writeGroups = ''
+
+    # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column width
+    ServicePermissionsWorksheet = workbook.add_worksheet('Insecure Service Permissions')
+    ServicePermissionsWorksheet.set_column(0, 0, 40)
+    ServicePermissionsWorksheet.set_column(1, 1, 15)
+    ServicePermissionsWorksheet.set_column(2, 2, 50)
+    ServicePermissionsWorksheet.set_column(3, 3, 85)
+    ServicePermissionsWorksheet.set_column(4, 4, 35)
+    ServicePermissionsWorksheet.set_column(5, 5, 30)
+    ServicePermissionsWorksheet.autofilter('A1:F1000000')
+
+    ServicePermissionsWorksheet.write (0, 0, 'Hostname')
+    ServicePermissionsWorksheet.write (0, 1, 'IP Address')
+    ServicePermissionsWorksheet.write (0, 2, 'Service Name')
+    ServicePermissionsWorksheet.write (0, 3, 'Service Path')
+    ServicePermissionsWorksheet.write (0, 4, 'User / Group with Write permissions')
+    ServicePermissionsWorksheet.write (0, 5, 'User / Group with Full Control')
+
+    row, col = 1, 0
+
+    for report_host in nfr.scan.report_hosts(root):
+        report_ip = nfr.host.resolved_ip(report_host)
+        report_fqdn = nfr.host.resolved_fqdn(report_host)
+        
+        plugin_65057 = nfr.plugin.plugin_outputs(root, report_host, '65057')
+        if 'Check Audit Trail' not in plugin_65057:
+
+            # If Nessus can't resolve the hostname get it from Device Hostname plugin
+            if not args.noresolve:
+                if report_fqdn is None:
+                    plugin_55472 = nfr.plugin.plugin_outputs(root, report_host, '55472')
+                    hostname_plugin = io.StringIO(plugin_55472)
+                    for line in hostname_plugin.getvalue().split('\n'):
+                        if 'Hostname : ' in line:
+                            report_fqdn = line.replace('  Hostname : ','')
+                            break
+                        else:
+                            report_fqdn = "N/A"
+            else:
+                if report_fqdn is None:
+                    report_fqdn = "N/A"
+            
+            items = plugin_65057.split("\n\n")
+            for item in items:
+                lines = item.splitlines()
+
+                for line in lines:
+                    if ',' in line:
+                        line=line.replace(',',' &')
+                    if 'Path' in line:
+                        path=line.replace('Path : ','')
+                    if 'Used by services' in line:
+                        services=line.replace('Used by services : ','')
+                    if 'File write allowed' in line:
+                        dirGroups= line.replace('File write allowed for groups : ','')
+                    if 'Full control of directory' in line:
+                        writeGroups= line.replace('Full control of directory allowed for groups : ','')
+
+                # Write to Excel worksheet
+                ServicePermissionsWorksheet.write (row, col, report_fqdn)
+                ServicePermissionsWorksheet.write (row, (col + 1), report_ip)
+                ServicePermissionsWorksheet.write (row, (col + 2), services)
+                ServicePermissionsWorksheet.write (row, (col + 3), path)
+                ServicePermissionsWorksheet.write (row, (col + 4), dirGroups)
+                ServicePermissionsWorksheet.write (row, (col + 5), writeGroups)
+                row += 1
+                col = 0
+
+    toc = time.perf_counter()
+
+    # If no data has been extracted, hide the worksheet (Xlsxwriter doesn't support delete)
+    if row == 1:
+        ServicePermissionsWorksheet.hide()
+        if args.verbose:
+            print('DEBUG - No Weak Service Permissions found, hiding workbook')
+    else:
+        if args.verbose:
+            print (f'DEBUG - Completed Weak Service Permissions. {row} rows took {toc - tic:0.4f} seconds')
+
 # Argparser to handle the usage / argument handling
 parser = argparse.ArgumentParser(description='''Extract useful information out of .nessus files into Excel
 
@@ -1097,6 +1257,7 @@ patches      = Missing Microsoft security patches
 remediations = All suggested fixes
 services     = Insecure Services and their weak permissions
 software     = Installed third party software (warning: can be heavy!)
+ssh          = Identify all weak SSH algorithms and ciphers in use
 unencrypted  = Unencrypted protocols in use. FTP, Telnet etc.
 unquoted     = Unquoted service paths and their weak permissions
 unsupported  = Unsupported operating systems
@@ -1205,6 +1366,8 @@ else:
         extractWeakServicePermissions(args.file)
     if 'software' in argvars['module']:
         extractInstalledSoftware(args.file)
+    if 'ssh' in argvars['module']:
+        extractSSHWeakAlgorithms(args.file)
     if 'unencrypted' in argvars['module']:
         extractUnencryptedProtocols(args.file)
     if 'unquoted' in argvars['module']:
