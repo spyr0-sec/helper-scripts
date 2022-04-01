@@ -28,11 +28,11 @@ def extractAll(nessus_scan_file):
     extractMSPatches(nessus_scan_file)
     extractRemediations(nessus_scan_file)
     extractInstalledSoftware(nessus_scan_file)
-    extractSSHWeakAlgorithms(nessus_scan_file)
     extractUnencryptedProtocols(nessus_scan_file)
     extractUnquotedServicePaths(nessus_scan_file)
     extractUnsupportedOperatingSystems(nessus_scan_file)
     extractWeakServicePermissions(nessus_scan_file)
+    extractWeakSSHAlgorithms(nessus_scan_file)
 
 # Extract system information
 def extractHosts(nessus_scan_file):
@@ -693,7 +693,7 @@ def extractInstalledSoftware(nessus_scan_file):
             print (f'DEBUG - Completed Installed Third Party Software. {row} rows took {toc - tic:0.4f} seconds')
 
 # Extract all Weak Algorithms and Ciphers being used by SSH services
-def extractSSHWeakAlgorithms(nessus_scan_file):
+def extractWeakSSHAlgorithms(nessus_scan_file):
     root = nfr.file.nessus_scan_file_root_element(nessus_scan_file)
     tic = time.perf_counter()
 
@@ -1367,7 +1367,7 @@ else:
     if 'software' in argvars['module']:
         extractInstalledSoftware(args.file)
     if 'ssh' in argvars['module']:
-        extractSSHWeakAlgorithms(args.file)
+        extractWeakSSHAlgorithms(args.file)
     if 'unencrypted' in argvars['module']:
         extractUnencryptedProtocols(args.file)
     if 'unquoted' in argvars['module']:
