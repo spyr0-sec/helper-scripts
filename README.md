@@ -31,11 +31,15 @@ A nessus file of around 8000 hosts takes around 5 minutes to process. Use --help
 An extended configuration file providing a wrapper around the nmap NSE library and hydra to automatically brute force common management ports.
 
 ```
-sudo apt install python3-sqlalchemy python3-pyqt5 wkhtmltopdf ldap-utils rwho rsh-client x11-apps finger seclists
-sudo git clone https://github.com/secforce/sparta.git /usr/share/sparta
-sudo mv /usr/share/sparta /usr/bin/sparta
-sudo chmod +x /usr/bin/sparta
+# Installation script - run as root
+apt install python3-sqlalchemy python3-pyqt5 wkhtmltopdf ldap-utils rwho rsh-client x11-apps finger seclists
+git clone https://github.com/secforce/sparta.git /usr/share/sparta
+mv /usr/share/sparta /usr/bin/sparta ; chmod +x /usr/bin/sparta
 wget https://raw.githubusercontent.com/spyr0-sec/helper-scripts/main/sparta.conf -O /usr/share/sparta/sparta.conf
+
+# Install vulscan 
+git clone https://github.com/scipag/vulscan.git /usr/share/vulscan
+cd /usr/share/vulscan ; rm *.csv ; sudo chmod +x update.sh ; sudo ./update.sh
 ```
 
 ## VLANer
@@ -48,4 +52,8 @@ CLI raw packet capturer for offline analysis
 
 ## Named_Pipes
 
-Extended list of named pipes to increase success of SMB based vulnerabilities. Replace /usr/share/metasploit-framework/data/wordlists/named_pipes.txt with this updated list.
+Extended list of named pipes to increase success of SMB based vulnerabilities. 
+
+```
+wget https://raw.githubusercontent.com/spyr0-sec/helper-scripts/main/named_pipes.txt -O /usr/share/metasploit-framework/data/wordlists/named_pipes.txt
+```
