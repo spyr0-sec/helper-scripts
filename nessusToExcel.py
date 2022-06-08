@@ -16,10 +16,12 @@ import nessus_file_reader as nfr
 # v0.9 - 11/04/2022 - Created dedicated excel functions to create workbook,worksheet,table and add data
 # Credit @nop-sec   - Created host dictionary to limit repeat host looks
 #                   - Moved the initial parse of XML root to main() rather than per issue to decrease loading of file.
+# v1.0 - 08/06/2022 - Added more unsupported OSes. Added databases, open ports and Linux patching modules. Made unquoted paths insensitive matching.
 
 # STANDARDS
 # Columns order - Hostname / IP Address / Other (Except for hosts which will be in reporter format of IP / Hostname / OS)
 # Columns width - Hostname = 40 / IP Address = 15 / Operating System = 40 / Protocol = 10 / Port = 6 / Other = variable
+# Long Date format - 01 January 1970 - 31 December 2049
 
 # Globals hosts dictionary to lookup host information by report_host
 Hosts = {}
@@ -30,10 +32,13 @@ def extractAll():
     extractHosts()
     extractIssues()
     extractCompliance()
+    extractDatabases()
     extractDefaultHTTP()
     extractHTTPServers()
     extractLastUpdated()
     extractMSPatches()
+    extractLinuxPatches()
+    extractOpenPorts()
     extractRemediations()
     extractInstalledSoftware()
     extractUnencryptedProtocols()
@@ -164,6 +169,154 @@ def extractCompliance():
     toc = time.perf_counter()
     if args.verbose:
         print (f'DEBUG - Completed Compliance. {len(tableData)} rows took {toc - tic:0.4f} seconds')
+
+# Provide database asset audit and include end of life dates. TODO - This module is taking significantly longer than the rest
+def extractDatabases():
+    tic = time.perf_counter()
+
+    # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
+    columns = []
+    columns.append(('Hostname',40))
+    columns.append(('IP Address',15))
+    columns.append(('Protocol',10))
+    columns.append(('Port',6))
+    columns.append(('Database Type',20))
+    columns.append(('Version',12))
+    columns.append(('MSSQL Instance Name',22))
+    columns.append(('End of Life Date',16))
+
+    tableData = []
+    mssql_version = ["",""]; mssql_instance = ["",""];  
+    mssql_eol = ""
+
+    for report_host in nfr.scan.report_hosts(root):
+        mssql_plugin = nfr.plugin.plugin_outputs(root, report_host, '10144')
+        auth_mssql_plugin = nfr.plugin.plugin_outputs(root, report_host, '11217')
+        mysql_plugin = nfr.plugin.plugin_outputs(root, report_host, '10719')
+        postgres_plugin = nfr.plugin.plugin_outputs(root, report_host, '26024')
+        oracle_plugin = nfr.plugin.plugin_outputs(root, report_host, '22073')
+        mongo_plugin = nfr.plugin.plugin_outputs(root, report_host, '65914')
+
+        # Microsoft SQL Server
+        if ('Check Audit Trail' not in mssql_plugin) or ('Check Audit Trail' not in auth_mssql_plugin):
+            report_ip = nfr.host.resolved_ip(report_host)
+            report_fqdn = Hosts[report_ip]
+                    
+            report_items_per_host = nfr.host.report_items(report_host)
+            for report_item in report_items_per_host:
+                
+                plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
+                if (plugin_id == 11217) or (plugin_id == 10144):
+                    # Auth
+                    if plugin_id == 11217: 
+                        lines = auth_mssql_plugin.splitlines()
+                        mssql_port = '1433'
+                    # Unauth
+                    if (plugin_id == 10144): 
+                        lines = mssql_plugin.splitlines()
+                        mssql_port = nfr.plugin.report_item_value(report_item, 'port')
+                    
+                    for line in lines:
+                        if 'Version             :' in line:
+                            mssql_version = line.split()
+                            if '10' in line:
+                                mssql_eol = "09 July 2019"
+                            if '11' in line:
+                                mssql_eol = "12 July 2022"
+                        if 'Instance' in line:
+                            mssql_instance = line.split()
+
+                    mssql_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+
+                    # Write to Excel worksheet
+                    tableData.append((report_fqdn,report_ip,mssql_protocol,mssql_port,"Microsoft SQL Server",mssql_version[2],mssql_instance[-1],mssql_eol))
+
+        # MySQL 
+        if 'Check Audit Trail' not in mysql_plugin:
+            report_ip = nfr.host.resolved_ip(report_host)
+            report_fqdn = Hosts[report_ip]
+                    
+            report_items_per_host = nfr.host.report_items(report_host)
+            for report_item in report_items_per_host:
+                
+                plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
+                if plugin_id == 10719:
+
+                    mysql_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                    mysql_port = nfr.plugin.report_item_value(report_item, 'port')
+
+                    # Write to Excel worksheet
+                    tableData.append((report_fqdn,report_ip,mysql_protocol,mysql_port,"MySQL","",""))
+
+        # PostgreSQL
+        if 'Check Audit Trail' not in postgres_plugin:
+            report_ip = nfr.host.resolved_ip(report_host)
+            report_fqdn = Hosts[report_ip]
+                    
+            report_items_per_host = nfr.host.report_items(report_host)
+            for report_item in report_items_per_host:
+                
+                plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
+                if plugin_id == 26024:
+
+                    postgres_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                    postgres_port = nfr.plugin.report_item_value(report_item, 'port')
+
+                    # Write to Excel worksheet
+                    tableData.append((report_fqdn,report_ip,postgres_protocol,postgres_port,"PostgreSQL","",""))
+
+        # Oracle
+        if 'Check Audit Trail' not in oracle_plugin:
+            report_ip = nfr.host.resolved_ip(report_host)
+            report_fqdn = Hosts[report_ip]
+                    
+            report_items_per_host = nfr.host.report_items(report_host)
+            for report_item in report_items_per_host:
+                
+                plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
+                if plugin_id == 22073:
+
+                    lines = oracle_plugin.splitlines()
+                    for line in lines:
+                        if 'Version' in line:
+                            oracle_version = line.split()                                    
+
+                    oracle_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                    oracle_port = nfr.plugin.report_item_value(report_item, 'port')
+
+                    # Write to Excel worksheet
+                    tableData.append((report_fqdn,report_ip,oracle_protocol,oracle_port,"Oracle Database",oracle_version[2].strip(),""))           
+
+        # MongoDB
+        if 'Check Audit Trail' not in mongo_plugin:
+            report_ip = nfr.host.resolved_ip(report_host)
+            report_fqdn = Hosts[report_ip]
+                    
+            report_items_per_host = nfr.host.report_items(report_host)
+            for report_item in report_items_per_host:
+                
+                plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
+                if plugin_id == 65914:
+
+                    lines = mongo_plugin.splitlines()
+                    for line in lines:
+                        if 'Version' in line:
+                            mongo_version = line.split()                                    
+
+                    mongo_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                    mongo_port = nfr.plugin.report_item_value(report_item, 'port')
+
+                    # Write to Excel worksheet
+                    tableData.append((report_fqdn,report_ip,mongo_protocol,mongo_port,"MongoDB",mongo_version[2].strip(),""))     
+    
+    if len(tableData) > 0:
+        DatabaseWorksheet = CreateWorksheet(workbook,'Databases')
+        CreateSheetTable(columns,DatabaseWorksheet)
+        AddTableData(tableData,DatabaseWorksheet)
+
+    toc = time.perf_counter()
+    if args.verbose:
+        print (f'DEBUG - Completed Database Audit. {len(tableData)} rows took {toc - tic:0.4f} seconds')
 
 # Extract all Default HTTP instances
 def extractDefaultHTTP():
@@ -325,6 +478,92 @@ def extractMSPatches():
     toc = time.perf_counter()
     if args.verbose:
         print (f'DEBUG - Completed Microsoft Patches. {len(tableData)} rows took {toc - tic:0.4f} seconds')
+
+# Extract all missing Linux security patches
+def extractLinuxPatches():
+    tic = time.perf_counter()
+
+    # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
+    columns = []
+    columns.append(('Hostname',40))
+    columns.append(('IP Address',15))
+    columns.append(('Missing patch',67))
+    columns.append(('Current Package Version',50))
+    columns.append(('Latest Package Version',50))
+
+    tableData = []
+
+    # Will need to assess each plugin for its family
+    for report_host in nfr.scan.report_hosts(root):
+        all_plugins = nfr.host.report_items(report_host)
+        
+        for plugin in all_plugins:
+            if 'Check Audit Trail' not in plugin:
+                report_ip = nfr.host.resolved_ip(report_host)
+                report_fqdn = Hosts[report_ip]
+                plugin_id = nfr.plugin.report_item_value(plugin, 'pluginID')
+                plugin_name = nfr.plugin.report_item_value(plugin, 'pluginName')
+                plugin_family = nfr.plugin.report_item_value(plugin, 'pluginFamily')
+
+                # https://www.tenable.com/plugins/nessus/families - Handily everything but Windows are captured here
+                if "Local Security Checks" in plugin_family:
+                    lines = nfr.plugin.plugin_output(root, report_host, plugin_id).splitlines()
+
+                    for line in lines:
+                        if "Remote package installed :" in line:
+                            currentver = line.split(":",1)
+                        if "Should be                :" in line:
+                            latestver = line.split(":",1)
+                            tableData.append((report_fqdn,report_ip,plugin_name,currentver[-1].strip(),latestver[-1].strip()))
+
+    if len(tableData) > 0:
+        LinuxPatchesWorksheet = CreateWorksheet(workbook,'Missing Linux Patches')
+        CreateSheetTable(columns,LinuxPatchesWorksheet)
+        AddTableData(tableData,LinuxPatchesWorksheet)
+
+    toc = time.perf_counter()
+    if args.verbose:
+        print (f'DEBUG - Completed Linux Patches. {len(tableData)} rows took {toc - tic:0.4f} seconds')
+
+# Extract all open ports
+def extractOpenPorts():
+    tic = time.perf_counter()
+
+    # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
+    columns = []
+    columns.append(('Hostname',40))
+    columns.append(('IP Address',15))
+    columns.append(('Protocol',10))
+    columns.append(('Port',6))
+
+    tableData = []
+
+    for report_host in nfr.scan.report_hosts(root):
+        report_ip = nfr.host.resolved_ip(report_host)
+        report_fqdn = Hosts[report_ip]
+
+        report_items_per_host = nfr.host.report_items(report_host)
+        for report_item in report_items_per_host:
+            
+            plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
+
+            # Unauth SYN, TCP & UDP + Auth SSH * Netstat plugin outputs
+            if (plugin_id == 11219 or plugin_id == 34277 or plugin_id == 10335 or plugin_id == 14272 or plugin_id == 34220):
+                protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                port = nfr.plugin.report_item_value(report_item, 'port')
+
+                if (port != "0"):
+                    # Write to Excel worksheet
+                    tableData.append((report_fqdn,report_ip,protocol,port))
+
+    if len(tableData) > 0:
+        OpenPortsWorksheet = CreateWorksheet(workbook,'Open Ports')
+        CreateSheetTable(columns,OpenPortsWorksheet)
+        AddTableData(tableData,OpenPortsWorksheet)
+    
+    toc = time.perf_counter()
+    if args.verbose:
+        print (f'DEBUG - Completed Open Ports. {len(tableData)} rows took {toc - tic:0.4f} seconds')
 
 # Extract all remediations (normally third party software update advice)
 def extractRemediations():
@@ -489,7 +728,7 @@ def extractUnquotedServicePaths():
                 if len(line) > 2 and 'Nessus found the following' not in line:
                     service,path = line.split(':',1)
                     # Write to Excel worksheet
-                    if 'C:\Program Files' in path:
+                    if "C:\Program Files".lower() in path.lower():
                         tableData.append((report_fqdn,report_ip,service.strip(),path.strip(),'Low'))
                     else:
                         tableData.append((report_fqdn,report_ip,service.strip(),path.strip(),'High'))
@@ -514,7 +753,7 @@ def extractUnsupportedOperatingSystems():
     columns.append(('Operating System',55))
     columns.append(('End of Mainstream Support Date',31))
     columns.append(('End of Extended Support Date',29))
-    columns.append(('End of Extended Security Update (ESU) Program Date',50))
+    columns.append(('End of Extended Security Updates (ESU / ESM) Date',50))
 
     tableData = []
 
@@ -524,33 +763,45 @@ def extractUnsupportedOperatingSystems():
         report_host_os = nfr.host.detected_os(report_host)
 
         if report_host_os is not None and report_host_os.count('\n') == 0:
-            match report_host_os:
-            # https://docs.microsoft.com/en-gb/lifecycle/products/
-                case 'Microsoft Windows 2000':
-                    tableData.append((report_fqdn,report_ip,report_host_os,"30 June 2005","13 July 2010",""))
-                case 'Microsoft Windows Server 2003':
-                    tableData.append((report_fqdn,report_ip,report_host_os,"13 July 2010","14 July 2015",""))
-                case 'Microsoft Windows Server 2008':
-                    tableData.append((report_fqdn,report_ip,report_host_os,"13 January 2015","14 January 2020","10 January 2023"))
-                case 'Microsoft Windows XP':
-                    tableData.append((report_fqdn,report_ip,report_host_os,"14 April 2009","08 April 2014",""))
-                case 'Microsoft Windows Vista':
-                    tableData.append((report_fqdn,report_ip,report_host_os,"10 April 2012","11 April 2017",""))
-                case 'Microsoft Windows 7':
-                    tableData.append((report_fqdn,report_ip,report_host_os,"13 January 2015","14 January 2020","10 January 2023"))
-            # https://endoflife.date/
-                case 'VMware ESXi 5.5':
-                    tableData.append((report_fqdn,report_ip,report_host_os,"19 September 2015","19 September 2020",""))
-                case 'VMware ESXi 6.0':
-                    tableData.append((report_fqdn,report_ip,report_host_os,"12 March 2018","12 March 2022",""))
-                case 'Ubuntu 9.04':
-                    tableData.append((report_fqdn,report_ip,report_host_os,"23 October 2010","",""))
-                case 'Ubuntu 14.04':
-                    tableData.append((report_fqdn,report_ip,report_host_os,"30 September 2016","02 April 2019",""))
-                case 'Ubuntu 16.04':
-                    tableData.append((report_fqdn,report_ip,report_host_os,"01 October 2018","02 April 2021",""))
-                case 'CentOS Linux 6':
-                    tableData.append((report_fqdn,report_ip,report_host_os,"10 May 2017","30 November 2020",""))
+            # https://docs.microsoft.com/en-gb/lifecycle/products/            
+            if 'Microsoft Windows 2000' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"30 June 2005","13 July 2010",""))
+            if 'Microsoft Windows Server 2003' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"13 July 2010","14 July 2015",""))
+            if 'Microsoft Windows Server 2008' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"13 January 2015","14 January 2020","10 January 2023"))
+            if 'Microsoft Windows XP' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"14 April 2009","08 April 2014",""))
+            if 'Microsoft Windows Vista' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"10 April 2012","11 April 2017",""))
+            if 'Microsoft Windows 7' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"13 January 2015","14 January 2020","10 January 2023"))
+        # https://endoflife.date/   https://endoflife.software/
+            if 'VMware ESXi 5.5' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"19 September 2015","19 September 2020",""))
+            if 'VMware ESXi 6.0' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"12 March 2018","12 March 2022",""))
+            if 'Ubuntu 10.04' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"30 April 2015","",""))
+            if 'Ubuntu 12.04' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"28 April 2017","",""))
+            if 'Ubuntu 14.04' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"02 April 2019","","02 April 2024"))
+            if 'Ubuntu 16.04' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"02 April 2021","","02 April 2026"))
+            if 'CentOS Linux 5' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"31 March 2017","",""))
+            if 'CentOS Linux release 6' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"30 November 2020","",""))
+            if 'CentOS Linux 8' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"31 December 2021","",""))
+        # https://www.freebsd.org/security/unsupported/
+            if 'FreeBSD 9.' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"31 December 2016","",""))
+            if 'FreeBSD 10.' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"31 October 2018","",""))
+            if 'FreeBSD 11.' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"30 September 2021","",""))
 
     if len(tableData) > 0:
         UnsupportedOSWorksheet = CreateWorksheet(workbook,'Unsupported Operating Systems')
@@ -799,6 +1050,7 @@ def AddTableData(tableData,workSheet):
 def CloseWorkbook(workBook):
     workBook.close()
 
+# -------------------------------------------------------------------------------
 # Argparser to handle the usage / argument handling
 parser = argparse.ArgumentParser(description='''Extract useful information out of .nessus files into Excel
 
@@ -814,13 +1066,15 @@ parser.add_argument('--noresolve', '-n', action='store_true', help='Do not use W
 parser.add_argument('--module', '-m', type=str, default='all', 
 help=textwrap.dedent('''Comma seperated list of what data you want to extract:
 all          = Default
-compliance   = CIS Compliance data
+compliance   = Format CIS Compliance output
+database     = Audit of all identified databases 
 defaulthttp  = Web servers with default content
-hosts        = Host information (also comes in .txt file for reporter import)
+hosts        = Host information (also comes in .txt file)
 http         = Identify all HTTP servers and their versions
 issues       = Present all non-info issues
 lastupdated  = View all Windows host security patch levels
-patches      = Missing Microsoft security patches
+nixpatches   = Missing Microsoft security patches
+ports        = All identified open ports
 remediations = All suggested fixes
 services     = Insecure Services and their weak permissions
 software     = Installed third party software (warning: can be heavy!)
@@ -828,6 +1082,7 @@ ssh          = Identify all weak SSH algorithms and ciphers in use
 unencrypted  = Unencrypted protocols in use. FTP, Telnet etc.
 unquoted     = Unquoted service paths and their weak permissions
 unsupported  = Unsupported operating systems
+winpatches   = Missing Microsoft security patches
 '''))
 
 # Keep a timer to keep an eye on performance
@@ -916,6 +1171,8 @@ else:
     # TODO - make into switch statement as currently invalid modules will be omitted without warning
     if 'compliance' in argvars['module']:
         extractCompliance()
+    if 'database' in argvars['module']:
+        extractDatabases()
     if 'defaulthttp' in argvars['module']:
         extractDefaultHTTP()  
     if 'hosts' in argvars['module']:
@@ -926,8 +1183,10 @@ else:
         extractIssues()    
     if 'lastupdated' in argvars['module']:
         extractLastUpdated()   
-    if 'patches' in argvars['module']:
-        extractMSPatches()
+    if 'nixpatches' in argvars['module']:
+        extractLinuxPatches()
+    if 'ports' in argvars['module']:
+        extractOpenPorts()
     if 'remediations' in argvars['module']:
         extractRemediations()
     if 'services' in argvars['module']:
@@ -942,6 +1201,8 @@ else:
         extractUnquotedServicePaths()
     if 'unsupported' in argvars['module']:
         extractUnsupportedOperatingSystems()
+    if 'winpatches' in argvars['module']:
+        extractMSPatches()
     else:
         print('Invalid module provided. Omitting')
 
