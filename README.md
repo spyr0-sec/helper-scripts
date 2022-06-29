@@ -34,7 +34,7 @@ An extended configuration file providing a wrapper around the nmap NSE library a
 # Installation script - run as root
 apt install python3-sqlalchemy python3-pyqt5 wkhtmltopdf ldap-utils rwho rsh-client x11-apps finger seclists
 git clone https://github.com/secforce/sparta.git /usr/share/sparta
-mv /usr/share/sparta /usr/bin/sparta ; chmod +x /usr/bin/sparta
+mv /usr/share/sparta/sparta /usr/bin/sparta ; chmod +x /usr/bin/sparta
 wget https://raw.githubusercontent.com/spyr0-sec/helper-scripts/main/sparta.conf -O /usr/share/sparta/sparta.conf
 
 # Install vulscan 
