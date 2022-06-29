@@ -1,5 +1,6 @@
 #!/usr/bin/python3
-import os, re, io, argparse, errno, shutil, string, time, textwrap, xlsxwriter
+import os, re, io, argparse, shutil, string, time, textwrap, xlsxwriter
+from xml.etree.ElementTree import ParseError
 import nessus_file_reader as nfr
 
 # CHANGELOG
@@ -17,6 +18,9 @@ import nessus_file_reader as nfr
 # Credit @nop-sec   - Created host dictionary to limit repeat host looks
 #                   - Moved the initial parse of XML root to main() rather than per issue to decrease loading of file.
 # v1.0 - 08/06/2022 - Added more unsupported OSes. Added databases, open ports and Linux patching modules. Made unquoted paths insensitive matching.
+# v1.1 - 29/06/2022 - Fixed invalid module error. Refactored winpatches module. Changed default Excel filename to match input nessus.
+#                   - Removed WinRM ports from HTTP output. Better handling if output file is already open. Added keyword search module.
+#                   - Added more database end of life dates 
 
 # STANDARDS
 # Columns order - Hostname / IP Address / Other (Except for hosts which will be in reporter format of IP / Hostname / OS)
@@ -59,7 +63,7 @@ def extractHosts():
 
     tableData = []
     
-    with open("Host Information.txt", "a") as txt_file:
+    with open("Host Information.txt", "w") as txt_file:
         
         for report_host in nfr.scan.report_hosts(root):
             report_ip = nfr.host.resolved_ip(report_host)
@@ -74,6 +78,8 @@ def extractHosts():
 
             # Write to Excel worksheet
             tableData.append((report_ip,report_fqdn,report_host_os))
+    
+    txt_file.close()
     
     if len(tableData) > 0:
         HostsWorksheet = CreateWorksheet(workbook,'Host Information')
@@ -181,55 +187,62 @@ def extractDatabases():
     columns.append(('Protocol',10))
     columns.append(('Port',6))
     columns.append(('Database Type',20))
-    columns.append(('Version',12))
-    columns.append(('MSSQL Instance Name',22))
+    columns.append(('Version',63))
+    columns.append(('MSSQL Instance Name',34))
     columns.append(('End of Life Date',16))
 
     tableData = []
-    mssql_version = ["",""]; mssql_instance = ["",""];  
-    mssql_eol = ""
 
     for report_host in nfr.scan.report_hosts(root):
-        mssql_plugin = nfr.plugin.plugin_outputs(root, report_host, '10144')
+        unauth_mssql_plugin = nfr.plugin.plugin_outputs(root, report_host, '10144')
         auth_mssql_plugin = nfr.plugin.plugin_outputs(root, report_host, '11217')
         mysql_plugin = nfr.plugin.plugin_outputs(root, report_host, '10719')
         postgres_plugin = nfr.plugin.plugin_outputs(root, report_host, '26024')
         oracle_plugin = nfr.plugin.plugin_outputs(root, report_host, '22073')
         mongo_plugin = nfr.plugin.plugin_outputs(root, report_host, '65914')
 
+        # Reinit variables each loop
+        mssql_version = ["",""]; mssql_instance = ["",""]; mysql_version = ["",""]
+        mssql_eol = ""
+
         # Microsoft SQL Server
-        if ('Check Audit Trail' not in mssql_plugin) or ('Check Audit Trail' not in auth_mssql_plugin):
+        if ('Check Audit Trail' not in unauth_mssql_plugin) or ('Check Audit Trail' not in auth_mssql_plugin):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
                     
             report_items_per_host = nfr.host.report_items(report_host)
             for report_item in report_items_per_host:
+                lines = None
                 
                 plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
-                if (plugin_id == 11217) or (plugin_id == 10144):
-                    # Auth
-                    if plugin_id == 11217: 
-                        lines = auth_mssql_plugin.splitlines()
-                        mssql_port = '1433'
-                    # Unauth
-                    if (plugin_id == 10144): 
-                        lines = mssql_plugin.splitlines()
-                        mssql_port = nfr.plugin.report_item_value(report_item, 'port')
-                    
+                
+                if plugin_id == 10144:
+                    lines = unauth_mssql_plugin.splitlines()
+                    mssql_port = nfr.plugin.report_item_value(report_item, 'port')
+                if plugin_id == 11217:
+                    lines = auth_mssql_plugin.splitlines()
+                    mssql_port = '1433'
+                
+                if lines is not None:
                     for line in lines:
-                        if 'Version             :' in line:
-                            mssql_version = line.split()
-                            if '10' in line:
-                                mssql_eol = "09 July 2019"
-                            if '11' in line:
-                                mssql_eol = "12 July 2022"
+                        if ('Version' in line) and ('Recommended' not in line):
+                            mssql_version = line.split(':', 1)
+
+                            sql_2005 = re.match(r'9[.]0[.]', mssql_version[-1].strip())
+                            sql_2008 = re.match(r'10[.][5|0][0|.]', mssql_version[-1].strip())
+                            sql_2012 = re.match(r'11[.]0[.]', mssql_version[-1].strip())
+
+                            if sql_2005: mssql_eol = "12 April 2016"
+                            if sql_2008: mssql_eol = "09 July 2019"
+                            if sql_2012: mssql_eol = "12 July 2022"
+
                         if 'Instance' in line:
-                            mssql_instance = line.split()
+                            mssql_instance = line.split(':', 1)
 
                     mssql_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
 
                     # Write to Excel worksheet
-                    tableData.append((report_fqdn,report_ip,mssql_protocol,mssql_port,"Microsoft SQL Server",mssql_version[2],mssql_instance[-1],mssql_eol))
+                    tableData.append((report_fqdn,report_ip,mssql_protocol,mssql_port,"Microsoft SQL Server",mssql_version[-1].strip(),mssql_instance[-1].strip(),mssql_eol))
 
         # MySQL 
         if 'Check Audit Trail' not in mysql_plugin:
@@ -241,14 +254,28 @@ def extractDatabases():
                 
                 plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
                 if plugin_id == 10719:
+                    lines = mysql_plugin.splitlines()
+                    for line in lines:
+                        if 'Version' in line:
+                            mysql_version = line.split(':', 1)
+
+                            mysql_five_zero = re.match(r'5[.]0[.]', mysql_version[-1].strip())
+                            mysql_five_one = re.match(r'5[.]1[.]', mysql_version[-1].strip())
+                            mysql_five_five = re.match(r'5[.]5[.]', mysql_version[-1].strip())
+                            mysql_five_six = re.match(r'5[.]6[.]', mysql_version[-1].strip())
+
+                            if mysql_five_zero: mysql_eol = "09 January 2012"                            
+                            if mysql_five_one: mysql_eol  = "31 December 2013"
+                            if mysql_five_five: mysql_eol = "03 December 2018"
+                            if mysql_five_six: mysql_eol  = "05 February 2021"
 
                     mysql_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
                     mysql_port = nfr.plugin.report_item_value(report_item, 'port')
 
                     # Write to Excel worksheet
-                    tableData.append((report_fqdn,report_ip,mysql_protocol,mysql_port,"MySQL","",""))
+                    tableData.append((report_fqdn,report_ip,mysql_protocol,mysql_port,"MySQL",mysql_version[-1].strip(),"",mysql_eol))
 
-        # PostgreSQL
+        # PostgreSQL - Doesn't present any info from an unauth perspective
         if 'Check Audit Trail' not in postgres_plugin:
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
@@ -263,7 +290,7 @@ def extractDatabases():
                     postgres_port = nfr.plugin.report_item_value(report_item, 'port')
 
                     # Write to Excel worksheet
-                    tableData.append((report_fqdn,report_ip,postgres_protocol,postgres_port,"PostgreSQL","",""))
+                    tableData.append((report_fqdn,report_ip,postgres_protocol,postgres_port,"PostgreSQL"))
 
         # Oracle
         if 'Check Audit Trail' not in oracle_plugin:
@@ -279,13 +306,13 @@ def extractDatabases():
                     lines = oracle_plugin.splitlines()
                     for line in lines:
                         if 'Version' in line:
-                            oracle_version = line.split()                                    
+                            oracle_version = line.split()
 
                     oracle_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
                     oracle_port = nfr.plugin.report_item_value(report_item, 'port')
 
                     # Write to Excel worksheet
-                    tableData.append((report_fqdn,report_ip,oracle_protocol,oracle_port,"Oracle Database",oracle_version[2].strip(),""))           
+                    tableData.append((report_fqdn,report_ip,oracle_protocol,oracle_port,"Oracle Database",oracle_version[-1].strip()))           
 
         # MongoDB
         if 'Check Audit Trail' not in mongo_plugin:
@@ -301,13 +328,21 @@ def extractDatabases():
                     lines = mongo_plugin.splitlines()
                     for line in lines:
                         if 'Version' in line:
-                            mongo_version = line.split()                                    
+                            mongo_version = line.split(':', 1)
+
+                            mongo_one = re.match(r"^1[.][1-9][.]", mongo_version[-1].strip())
+                            mongo_two = re.match(r"^2[.][1-9][.]", mongo_version[-1].strip())
+                            mongo_three = re.match(r"^3[.][1-9][.]", mongo_version[-1].strip())
+
+                            if mongo_one: mongo_eol = "01 September 2012"                            
+                            if mongo_two: mongo_eol  = "01 October 2016"
+                            if mongo_three: mongo_eol = "30 April 2021"                        
 
                     mongo_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
                     mongo_port = nfr.plugin.report_item_value(report_item, 'port')
 
                     # Write to Excel worksheet
-                    tableData.append((report_fqdn,report_ip,mongo_protocol,mongo_port,"MongoDB",mongo_version[2].strip(),""))     
+                    tableData.append((report_fqdn,report_ip,mongo_protocol,mongo_port,"MongoDB",mongo_version[-1].strip(),"",mongo_eol))     
     
     if len(tableData) > 0:
         DatabaseWorksheet = CreateWorksheet(workbook,'Databases')
@@ -392,8 +427,9 @@ def extractHTTPServers():
                 http_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
                 http_port = nfr.plugin.report_item_value(report_item, 'port')
 
-                # Write to Excel worksheet
-                tableData.append((report_fqdn,report_ip,http_protocol,http_port,lines[2]))
+                # Write to Excel worksheet if not WinRM / SCCM HTTP ports
+                if (http_port != "5985") and (http_port != "8005")  and (http_port != "47001"):
+                    tableData.append((report_fqdn,report_ip,http_protocol,http_port,lines[2]))
     
     if len(tableData) > 0:
         HTTPServerWorksheet = CreateWorksheet(workbook,'HTTP Servers')
@@ -448,32 +484,33 @@ def extractMSPatches():
     columns = []
     columns.append(('Hostname',40))
     columns.append(('IP Address',15))
-    columns.append(('Missing Security Patch',22))
-    columns.append(('Vendor Advisory',60))
+    columns.append(('Missing Security Patch',110))
+    columns.append(('Additional Information',180))
 
     tableData = []
 
+    # Will need to assess each plugin for its family
     for report_host in nfr.scan.report_hosts(root):
-        plugin_38153 = nfr.plugin.plugin_outputs(root, report_host, '38153')
+        all_plugins = nfr.host.report_items(report_host)
+        
+        for plugin in all_plugins:
+            if 'Check Audit Trail' not in plugin:
+                report_ip = nfr.host.resolved_ip(report_host)
+                report_fqdn = Hosts[report_ip]
+                plugin_id = nfr.plugin.report_item_value(plugin, 'pluginID')
+                plugin_name = nfr.plugin.report_item_value(plugin, 'pluginName')
+                plugin_family = nfr.plugin.report_item_value(plugin, 'pluginFamily')
 
-        if 'Check Audit Trail' not in plugin_38153:
-            report_ip = nfr.host.resolved_ip(report_host)
-            report_fqdn = Hosts[report_ip]
+                if (plugin_family == "Windows : Microsoft Bulletins") and (plugin_name != "Microsoft Windows Summary of Missing Patches") and (plugin_name != "Microsoft Patch Bulletin Feasibility Check"):
+                    output = nfr.plugin.plugin_output(root, report_host, plugin_id)
 
-            lines = plugin_38153.splitlines()
-            for line in lines:
-                line.strip()
-
-                if len(line) > 2 and 'The patches for the following bulletins' not in line:
-                    patch,advisory = line.split('(',1)
-
-                    # Write to Excel worksheet. TODO: Advisory links are all dead
-                    tableData.append((report_fqdn,report_ip,patch[3:].strip(),advisory[:-3].strip()))
-    
+                    tableData.append((report_fqdn,report_ip,plugin_name,output.strip()))
+           
     if len(tableData) > 0:
         MSPatchesWorksheet = CreateWorksheet(workbook,'Missing Microsoft Patches')
         CreateSheetTable(columns,MSPatchesWorksheet)
         AddTableData(tableData,MSPatchesWorksheet)
+        print ("INFO - Please text wrap column D within the Missing Microsoft Patches worksheet. Highlight column -> Home -> Wrap Text")
 
     toc = time.perf_counter()
     if args.verbose:
@@ -769,13 +806,15 @@ def extractUnsupportedOperatingSystems():
             if 'Microsoft Windows Server 2003' in report_host_os:
                 tableData.append((report_fqdn,report_ip,report_host_os,"13 July 2010","14 July 2015",""))
             if 'Microsoft Windows Server 2008' in report_host_os:
-                tableData.append((report_fqdn,report_ip,report_host_os,"13 January 2015","14 January 2020","10 January 2023"))
+                tableData.append((report_fqdn,report_ip,report_host_os,"13 January 2015","14 January 2020","10 January 2023"))            
             if 'Microsoft Windows XP' in report_host_os:
                 tableData.append((report_fqdn,report_ip,report_host_os,"14 April 2009","08 April 2014",""))
             if 'Microsoft Windows Vista' in report_host_os:
                 tableData.append((report_fqdn,report_ip,report_host_os,"10 April 2012","11 April 2017",""))
             if 'Microsoft Windows 7' in report_host_os:
                 tableData.append((report_fqdn,report_ip,report_host_os,"13 January 2015","14 January 2020","10 January 2023"))
+            if 'Microsoft Windows 8' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"","12 January 2016",""))                   
         # https://endoflife.date/   https://endoflife.software/
             if 'VMware ESXi 5.5' in report_host_os:
                 tableData.append((report_fqdn,report_ip,report_host_os,"19 September 2015","19 September 2020",""))
@@ -972,6 +1011,45 @@ def extractWeakSSHAlgorithms():
     if args.verbose:
         print (f'DEBUG - Completed Weak SSH Algorithms and Ciphers. {len(tableData)} rows took {toc - tic:0.4f} seconds')
 
+# Search plugins by keyword to pull out all relevant info
+def searchPlugins(keyword):
+    tic = time.perf_counter()
+
+    # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
+    columns = []
+    columns.append(('Hostname',40))
+    columns.append(('IP Address',15))
+    columns.append(('Plugin Name',110))
+    columns.append(('Plugin Output',180))
+
+    tableData = []
+
+    # Enumerate through all plugin names and see if keyword is present
+    for report_host in nfr.scan.report_hosts(root):
+        all_plugins = nfr.host.report_items(report_host)
+        
+        for plugin in all_plugins:
+            if 'Check Audit Trail' not in plugin:
+                report_ip = nfr.host.resolved_ip(report_host)
+                report_fqdn = Hosts[report_ip]
+                plugin_id = nfr.plugin.report_item_value(plugin, 'pluginID')
+                plugin_name = nfr.plugin.report_item_value(plugin, 'pluginName')
+
+                if keyword.lower() in plugin_name.lower():
+                    output = nfr.plugin.plugin_output(root, report_host, plugin_id)
+
+                    tableData.append((report_fqdn,report_ip,plugin_name,output.strip()))
+                    
+    if len(tableData) > 0:
+        SearchQueryWorksheet = CreateWorksheet(workbook,f'{keyword} Search Results')
+        CreateSheetTable(columns,SearchQueryWorksheet)
+        AddTableData(tableData,SearchQueryWorksheet)
+        print (f'INFO - Please text wrap column D within the {keyword} Search Results worksheet. Highlight column -> Home -> Wrap Text')
+
+    toc = time.perf_counter()
+    if args.verbose:
+        print (f'DEBUG - Completed Plugin Search. {len(tableData)} rows took {toc - tic:0.4f} seconds')
+
 #--------------------------------------------------------------------------------
 # Common Nessus Functions
 def GenerateHostDictionary():
@@ -1000,14 +1078,14 @@ def GenerateHostDictionary():
     toc = time.perf_counter()
 
     if len(Hosts) < 1:
-            print('No Hosts Found! Exiting..')
+            print('ERROR - No Hosts Found! Exiting..')
             exit()
     else:
         if args.verbose:
             print (f'DEBUG - Hosts List Generated. {len(Hosts)} rows took {toc - tic:0.4f} seconds')
 
 # -------------------------------------------------------------------------------
-# Excel Functions - First create our Excel workbook
+# Excel Functions -  First create our Excel workbook
 def CreateWorkBook(workBookName):
     excelPath = os.getcwd() + os.sep + workBookName
     workbook = xlsxwriter.Workbook(excelPath)
@@ -1055,13 +1133,14 @@ def CloseWorkbook(workBook):
 parser = argparse.ArgumentParser(description='''Extract useful information out of .nessus files into Excel
 
 nessusToExcel.py --verbose --file report.nessus --module unsupported,hosts,software --out companyName
-nessusToExcel.py --file report.nessus''', formatter_class=argparse.RawTextHelpFormatter)
+nessusToExcel.py -f client.nessus -q -m hosts,search -k "Log4j"''', formatter_class=argparse.RawTextHelpFormatter)
 
 # Arguments
 parser.add_argument('--file', '-f', required=True, help='.nessus file to extract from')
 parser.add_argument('--verbose', '-v', action='store_true', help='Increase output verbosity')
-parser.add_argument('--out', '-o', default='ExtractedData.xlsx', help='Name of resulting Excel workbook. (Does not need extention, default ExtractedData.xlsx)')
+parser.add_argument('--out', '-o', required=False, help='Name of resulting Excel workbook. (Does not need extention, default ExtractedData.xlsx)')
 parser.add_argument('--quiet', '-q', action='store_true', help='Accept defaults during execution')
+parser.add_argument('--keyword', '-k', required=False, help='Extract all information relating to this word')
 parser.add_argument('--noresolve', '-n', action='store_true', help='Do not use WMI / SSH Device Hostname Plugin to gain more hostnames (Comes with performance hit, default False)')
 parser.add_argument('--module', '-m', type=str, default='all', 
 help=textwrap.dedent('''Comma seperated list of what data you want to extract:
@@ -1077,6 +1156,7 @@ nixpatches   = Missing Microsoft security patches
 ports        = All identified open ports
 remediations = All suggested fixes
 services     = Insecure Services and their weak permissions
+search       = Extract all information based on keyword e.g. "Log4j" (Requires --keyword / -k flag)
 software     = Installed third party software (warning: can be heavy!)
 ssh          = Identify all weak SSH algorithms and ciphers in use
 unencrypted  = Unencrypted protocols in use. FTP, Telnet etc.
@@ -1092,31 +1172,40 @@ args = parser.parse_args()
 if args.verbose:
     print (f'DEBUG - Arguments provided: {args}')
 
-# If a valid .nessus file has been provided, create our Excel workbook
-if not '.xlsx' in args.out:
-    args.out = args.out + '.xlsx'
-    print(f'DEBUG - Output file does not contain extension, new value: {args.out}')
-
-# As Host Information.txt is appended, check if we want to remove it before starting
-hostInfoPath = os.getcwd() + os.sep + 'Host Information.txt'
-if os.path.isfile(hostInfoPath):
-    if args.quiet:
-        if args.verbose:
-            print(f'DEBUG - Removing previous Host Information.txt file - {os.getcwd()}{os.sep}Host Information.txt')
-        os.remove(hostInfoPath)
-    else:
-        host_answer = input("Host Information.txt already present, to stop this from being appended, would you like to remove this file first? [Y/n]")
-        if host_answer == 'Y' or host_answer == 'Yes' or host_answer == 'y' or host_answer == 'yes' or host_answer == '':
-            if args.verbose:
-                print(f'DEBUG - Removing previous Host Information.txt file - {os.getcwd()}{os.sep}Host Information.txt')
-            os.remove(hostInfoPath)
-
-# Ensure provided file or directory exists before we carry on
-if not os.path.isfile(args.file):
-    raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), args.file)
+# If a valid .nessus file has been provided, create our Excel workbook based on its name
+if not args.out:
+    args.out = f'{args.file.rsplit(".",1)[0]}.xlsx'
+    if args.verbose:
+        print(f'DEBUG - No output filename given, new value: {args.out}')
 else:
-    # Create our Excel workbook
-    workbook = CreateWorkBook(args.out)
+    if not '.xlsx' in args.out:
+        args.out = f'{args.out}.xlsx'
+        if args.verbose:
+            print(f'DEBUG - Output file does not contain extension, new value: {args.out}')
+    else:
+        if args.verbose:
+            print(f'DEBUG - Fully qualified output name given: {args.out}')
+
+# Check if the output files exist and are writable
+try:
+    if os.path.exists(args.out):
+        with open(args.out, "a") as open_excel: # Append mode - write mode deletes file contents
+            if not args.quiet:
+                excel_answer = input(f'WARN - {args.out} is about to be overwritten, would you like to continue? [Y/n] ')
+                if excel_answer.lower() == 'n' or excel_answer.lower() == 'no':
+                    exit(0)
+    if os.path.exists("Host Information.txt"):
+        with open("Host Information.txt", "a") as open_txt:
+            if not args.quiet:
+                host_answer = input("WARN - Host Information.txt is about to be overwritten, would you like to continue? [Y/n] ")
+                if host_answer.lower() == 'n' or host_answer.lower() == 'no':
+                    exit(0)
+except IOError as e:
+    print(f'ERROR - {e}. Please close file before trying again')
+    exit(1)
+
+# Create our Excel workbook
+workbook = CreateWorkBook(args.out)
 
 # Split out comma separated modules
 argvars = vars(parser.parse_args())
@@ -1134,7 +1223,7 @@ if 'compliance' in argvars['module'] or "all" in args.module:
 
             shutil.copyfile(args.file, f'{args.file}.bak')
         else:
-            comp_answer = input("To extract compliance output, changes to XML tags are required. While this should not cause any further issues, would you like to take a backup of your Nessus file first? [Y/n]")
+            comp_answer = input("To extract compliance output, changes to XML tags are required. While this should not cause any further issues, would you like to take a backup of your Nessus file first? [Y/n] ")
             if comp_answer == 'Y' or comp_answer == 'Yes' or comp_answer == 'y' or comp_answer == 'yes' or comp_answer == '':
                 if args.verbose:
                     print(f'DEBUG - Taking backup of Nessus file - {os.getcwd()}{os.sep}{args.file}.bak')
@@ -1156,8 +1245,12 @@ if 'compliance' in argvars['module'] or "all" in args.module:
         file.write(data)
 
 # Read XML and generate hosts list once
-root = nfr.file.nessus_scan_file_root_element(args.file)
-GenerateHostDictionary()
+try:
+    root = nfr.file.nessus_scan_file_root_element(args.file)
+    GenerateHostDictionary()
+except ParseError:
+    print("ERROR - Invalid nessus format file chosen, please try again.")
+    exit(1)
 
 # Check which modules have been requested
 if "all" in args.module:
@@ -1168,43 +1261,48 @@ else:
     if args.verbose:
         print(f'DEBUG - Modules selected: {(argvars["module"])}')
     
-    # TODO - make into switch statement as currently invalid modules will be omitted without warning
-    if 'compliance' in argvars['module']:
-        extractCompliance()
-    if 'database' in argvars['module']:
-        extractDatabases()
-    if 'defaulthttp' in argvars['module']:
-        extractDefaultHTTP()  
-    if 'hosts' in argvars['module']:
-        extractHosts()
-    if 'http' in argvars['module']:
-        extractHTTPServers()
-    if 'issues' in argvars['module']:
-        extractIssues()    
-    if 'lastupdated' in argvars['module']:
-        extractLastUpdated()   
-    if 'nixpatches' in argvars['module']:
-        extractLinuxPatches()
-    if 'ports' in argvars['module']:
-        extractOpenPorts()
-    if 'remediations' in argvars['module']:
-        extractRemediations()
-    if 'services' in argvars['module']:
-        extractWeakServicePermissions()
-    if 'software' in argvars['module']:
-        extractInstalledSoftware()
-    if 'ssh' in argvars['module']:
-        extractWeakSSHAlgorithms()
-    if 'unencrypted' in argvars['module']:
-        extractUnencryptedProtocols()
-    if 'unquoted' in argvars['module']:
-        extractUnquotedServicePaths()
-    if 'unsupported' in argvars['module']:
-        extractUnsupportedOperatingSystems()
-    if 'winpatches' in argvars['module']:
-        extractMSPatches()
-    else:
-        print('Invalid module provided. Omitting')
+    for module in argvars["module"]:
+        if 'compliance' == module.lower():
+            extractCompliance() ; continue
+        if 'database' == module.lower():
+            extractDatabases() ; continue               
+        if 'defaulthttp' == module.lower():
+            extractDefaultHTTP() ; continue
+        if 'hosts' == module.lower():
+            extractHosts() ; continue
+        if 'http' == module.lower():
+            extractHTTPServers() ; continue
+        if 'issues' == module.lower():
+            extractIssues() ; continue
+        if 'lastupdated' == module.lower():
+            extractLastUpdated() ; continue
+        if 'nixpatches' == module.lower():
+            extractLinuxPatches() ; continue
+        if 'ports' == module.lower():
+            extractOpenPorts() ; continue
+        if 'remediations' == module.lower():
+            extractRemediations() ; continue
+        if 'services' == module.lower():
+            extractWeakServicePermissions() ; continue
+        if 'software' == module.lower():
+            extractInstalledSoftware() ; continue
+        if 'ssh' == module.lower():
+            extractWeakSSHAlgorithms() ; continue
+        if 'unencrypted' == module.lower():
+            extractUnencryptedProtocols() ; continue
+        if 'unquoted' == module.lower():
+            extractUnquotedServicePaths() ; continue
+        if 'unsupported' == module.lower():
+            extractUnsupportedOperatingSystems() ; continue
+        if 'winpatches' == module.lower():
+            extractMSPatches() ; continue
+        if ('search' == module.lower()):
+            if (args.keyword is not None):
+                searchPlugins(args.keyword)
+            else: 
+                raise ValueError("Search module requires a keyword")
+        else:
+            print('WARN - Invalid module provided. Omitting')     
 
 toc = time.perf_counter()
 print (f'COMPLETED! Output can be found in {os.getcwd()}{os.sep}{args.out} Total time taken: {toc - tic:0.4f} seconds')
