@@ -20,7 +20,9 @@ import nessus_file_reader as nfr
 # v1.0 - 08/06/2022 - Added more unsupported OSes. Added databases, open ports and Linux patching modules. Made unquoted paths insensitive matching.
 # v1.1 - 29/06/2022 - Fixed invalid module error. Refactored winpatches module. Changed default Excel filename to match input nessus.
 #                   - Removed WinRM ports from HTTP output. Better handling if output file is already open. Added keyword search module.
-#                   - Added more database end of life dates 
+#                   - Added more database end of life dates
+# v1.2 - 25/07/2022 - Improved hostname resolvers. Fixed nix patching string matching. Added Debian EoL dates. Refactored compliance to cover all
+#                   - Added outdated third party software module 
 
 # STANDARDS
 # Columns order - Hostname / IP Address / Other (Except for hosts which will be in reporter format of IP / Hostname / OS)
@@ -45,6 +47,7 @@ def extractAll():
     extractOpenPorts()
     extractRemediations()
     extractInstalledSoftware()
+    extractOutdatedSoftware()
     extractUnencryptedProtocols()
     extractUnquotedServicePaths()
     extractUnsupportedOperatingSystems()
@@ -148,24 +151,26 @@ def extractCompliance():
 
     tableData = []
 
+    # Will need to assess each plugin for its family
     for report_host in nfr.scan.report_hosts(root):
-        report_ip = nfr.host.resolved_ip(report_host)
-        report_fqdn = Hosts[report_ip]
+        all_plugins = nfr.host.report_items(report_host)
+        
+        for plugin in all_plugins:
+            if 'Check Audit Trail' not in plugin:
+                report_ip = nfr.host.resolved_ip(report_host)
+                report_fqdn = Hosts[report_ip]
+                plugin_family = nfr.plugin.report_item_value(plugin, 'pluginFamily')
 
-        report_items_per_host = nfr.host.report_items(report_host)
-        for report_item in report_items_per_host:
-            
-            plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
-            if plugin_id == 21156:
-                compliance_host_value = nfr.plugin.report_item_value(report_item, 'compliance-actual-value')
-                compliance_policy_value = nfr.plugin.report_item_value(report_item, 'compliance-policy-value')
-                compliance_desc = nfr.plugin.report_item_value(report_item, 'compliance-check-name')
-                compliance_result = nfr.plugin.report_item_value(report_item, 'compliance-result')
+                if plugin_family == "Policy Compliance":
+                    compliance_host_value = nfr.plugin.report_item_value(plugin, 'compliance-actual-value')
+                    compliance_policy_value = nfr.plugin.report_item_value(plugin, 'compliance-policy-value')
+                    compliance_desc = nfr.plugin.report_item_value(plugin, 'compliance-check-name')
+                    compliance_result = nfr.plugin.report_item_value(plugin, 'compliance-result')
 
-                compliance_id,compliance_name = compliance_desc.split(' ',1)
+                    compliance_id,compliance_name = compliance_desc.split(' ',1)
 
-                # Write to Excel worksheet
-                tableData.append((report_fqdn,report_ip,compliance_id,compliance_result,compliance_host_value,compliance_policy_value,compliance_name))
+                    # Write to Excel worksheet
+                    tableData.append((report_fqdn,report_ip,compliance_id,compliance_result,compliance_host_value,compliance_policy_value,compliance_name))
 
     if len(tableData) > 0:
         ComplianceWorksheet = CreateWorksheet(workbook,'Compliance')
@@ -547,9 +552,9 @@ def extractLinuxPatches():
                     lines = nfr.plugin.plugin_output(root, report_host, plugin_id).splitlines()
 
                     for line in lines:
-                        if "Remote package installed :" in line:
+                        if "Remote package installed" in line:
                             currentver = line.split(":",1)
-                        if "Should be                :" in line:
+                        if "Should be" in line:
                             latestver = line.split(":",1)
                             tableData.append((report_fqdn,report_ip,plugin_name,currentver[-1].strip(),latestver[-1].strip()))
 
@@ -696,6 +701,69 @@ def extractInstalledSoftware():
     if args.verbose:
         print (f'DEBUG - Completed Installed Third Party Software. {len(tableData)} rows took {toc - tic:0.4f} seconds')
 
+# Extract all outdated software
+def extractOutdatedSoftware():
+    tic = time.perf_counter()
+
+    # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
+    columns = []
+    columns.append(('Hostname',40))
+    columns.append(('IP Address',15))
+    columns.append(('Issue',100))
+    columns.append(('Installed Version',70))
+    columns.append(('Latest Version',55))
+    columns.append(('End of Support Date',20))
+    columns.append(('Path',100))
+
+    tableData = []
+
+    # No queries to pull out just outdated software plugins. So will go through each one and look for "Installed version" 
+    for report_host in nfr.scan.report_hosts(root):
+        all_plugins = nfr.host.report_items(report_host)
+        
+        for plugin in all_plugins:
+            if 'Check Audit Trail' not in plugin:
+                # Remove all info and MS Patching issues
+                risk_factor = nfr.plugin.report_item_value(plugin, 'risk_factor')
+                plugin_family = nfr.plugin.report_item_value(plugin, 'pluginFamily')
+
+                if (risk_factor != 'None') and (plugin_family != 'Windows : Microsoft Bulletins'):
+                    report_ip = nfr.host.resolved_ip(report_host)
+                    report_fqdn = Hosts[report_ip]
+                    plugin_name = nfr.plugin.report_item_value(plugin, 'pluginName')
+                    plugin_id = int(nfr.plugin.report_item_value(plugin, 'pluginID'))
+                    plugin_output = nfr.plugin.plugin_outputs(root, report_host, plugin_id)
+
+                    installed_version = None; latest_version = None; eol_date = None; installed_path = None
+
+                    lines = plugin_output.splitlines()
+                    for idx, line in enumerate(lines):
+                        if 'Installed version' in line or 'Channel version' in line or 'Product' in line or 'File Version' in line or 'DLL Version' in line or 'File version' in line:
+                            installed_version = line.split(':',1)
+                            installed_version = installed_version[-1].strip()
+                        if 'Supported version' in line or 'Fixed version' in line or 'Minimum supported version' in line:
+                            latest_version = line.split(':',1)
+                            latest_version = latest_version[-1].strip()
+                        if 'End of support' in line or 'Support ended' in line or 'EOL date' in line:
+                            eol_date = line.split(':',1)
+                            eol_date = eol_date[-1].strip()       
+                        if 'Path' in line or 'Filename' in line or 'Install Path' in line:
+                            installed_path = line.split(':',1)
+                            installed_path = installed_path[-1].strip()
+
+                        # Wait until we get to the last line of the plugin output before writing to Excel
+                        if (idx == len(lines)-1) and (installed_version or latest_version or eol_date is not None):
+                            tableData.append((report_fqdn,report_ip,plugin_name,installed_version,latest_version,eol_date,installed_path))
+                        
+    if len(tableData) > 0:
+        OutdatedSoftwareWorksheet = CreateWorksheet(workbook,'Outdated Software')
+        CreateSheetTable(columns,OutdatedSoftwareWorksheet)
+        AddTableData(tableData,OutdatedSoftwareWorksheet)
+        
+    toc = time.perf_counter()
+    if args.verbose:
+        print (f'DEBUG - Completed Outdated Software. {len(tableData)} rows took {toc - tic:0.4f} seconds')
+
 # Identify all unencrypted protcols in use
 def extractUnencryptedProtocols():
     tic = time.perf_counter()
@@ -831,9 +899,17 @@ def extractUnsupportedOperatingSystems():
             if 'CentOS Linux 5' in report_host_os:
                 tableData.append((report_fqdn,report_ip,report_host_os,"31 March 2017","",""))
             if 'CentOS Linux release 6' in report_host_os:
-                tableData.append((report_fqdn,report_ip,report_host_os,"30 November 2020","",""))
+                tableData.append((report_fqdn,report_ip,report_host_os,"10 May 2017","30 November 2020",""))
             if 'CentOS Linux 8' in report_host_os:
                 tableData.append((report_fqdn,report_ip,report_host_os,"31 December 2021","",""))
+            if 'Debian 6' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"31 May 2015","29 February 2016",""))
+            if 'Debian 7' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"26 April 2016","01 May 2018","31 December 2019"))
+            if 'Debian 8' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"17 June 2018","30 June 2020","30 June 2022"))
+            if 'Debian 9' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"01 January 2020","30 June 2022",""))                                                
         # https://www.freebsd.org/security/unsupported/
             if 'FreeBSD 9.' in report_host_os:
                 tableData.append((report_fqdn,report_ip,report_host_os,"31 December 2016","",""))
@@ -1056,22 +1132,34 @@ def GenerateHostDictionary():
     tic = time.perf_counter()
 
     for report_host in nfr.scan.report_hosts(root):
-        # If Nessus can't resolve the hostname get it from Device Hostname plugin
+        # If Nessus can't resolve the hostname get it from other plugins
         report_fqdn = nfr.host.resolved_fqdn(report_host)
 
-        if not args.noresolve:
-            if report_fqdn is None:
-                plugin_55472 = nfr.plugin.plugin_outputs(root, report_host, '55472')
-                hostname_plugin = io.StringIO(plugin_55472)
-                for line in hostname_plugin.getvalue().split('\n'):
-                    if 'Hostname : ' in line:
-                        report_fqdn = line.replace('  Hostname : ','')
-                        break
-                    else:
-                        report_fqdn = "N.A"
-        else:
-            if report_fqdn is None:
-                report_fqdn = "N.A"
+        plugin_10785 = nfr.plugin.plugin_outputs(root, report_host, '10785')
+        plugin_55472 = nfr.plugin.plugin_outputs(root, report_host, '55472')    
+
+        if report_fqdn is None:
+            # First try FQDN from NativeLanManager plugin
+            if 'Check Audit Trail' not in plugin_10785:
+                lines = plugin_10785.splitlines()
+                for line in lines:
+                    if 'DNS Computer Name' in line:
+                        report_fqdn = line.split(':', 1)
+                        report_fqdn = report_fqdn[-1].strip()
+        
+        if report_fqdn is None:
+            # Then try hostname plugin
+            if 'Check Audit Trail' not in plugin_55472:
+                lines = plugin_55472.splitlines()
+                for line in lines:
+                    if 'Hostname' in line:
+                        report_fqdn = line.split(':', 1)
+                        report_fqdn = report_fqdn[-1].strip()
+        
+        if report_fqdn is None:
+            # If we still haven't obtained hostname, use placeholder
+            report_fqdn = "N.A"
+
         report_ip = nfr.host.resolved_ip(report_host)
         Hosts[report_ip] = report_fqdn
 
@@ -1138,31 +1226,31 @@ nessusToExcel.py -f client.nessus -q -m hosts,search -k "Log4j"''', formatter_cl
 # Arguments
 parser.add_argument('--file', '-f', required=True, help='.nessus file to extract from')
 parser.add_argument('--verbose', '-v', action='store_true', help='Increase output verbosity')
-parser.add_argument('--out', '-o', required=False, help='Name of resulting Excel workbook. (Does not need extention, default ExtractedData.xlsx)')
+parser.add_argument('--out', '-o', required=False, help='Name of resulting Excel workbook. (Does not need extention, default name based on input file)')
 parser.add_argument('--quiet', '-q', action='store_true', help='Accept defaults during execution')
 parser.add_argument('--keyword', '-k', required=False, help='Extract all information relating to this word')
-parser.add_argument('--noresolve', '-n', action='store_true', help='Do not use WMI / SSH Device Hostname Plugin to gain more hostnames (Comes with performance hit, default False)')
 parser.add_argument('--module', '-m', type=str, default='all', 
 help=textwrap.dedent('''Comma seperated list of what data you want to extract:
-all          = Default
-compliance   = Format CIS Compliance output
-database     = Audit of all identified databases 
-defaulthttp  = Web servers with default content
-hosts        = Host information (also comes in .txt file)
-http         = Identify all HTTP servers and their versions
-issues       = Present all non-info issues
-lastupdated  = View all Windows host security patch levels
-nixpatches   = Missing Microsoft security patches
-ports        = All identified open ports
-remediations = All suggested fixes
-services     = Insecure Services and their weak permissions
-search       = Extract all information based on keyword e.g. "Log4j" (Requires --keyword / -k flag)
-software     = Installed third party software (warning: can be heavy!)
-ssh          = Identify all weak SSH algorithms and ciphers in use
-unencrypted  = Unencrypted protocols in use. FTP, Telnet etc.
-unquoted     = Unquoted service paths and their weak permissions
-unsupported  = Unsupported operating systems
-winpatches   = Missing Microsoft security patches
+all              = Default
+compliance       = Format CIS Compliance output
+database         = Audit of all identified databases 
+defaulthttp      = Web servers with default content
+hosts            = Host information (also comes in .txt file)
+http             = Identify all HTTP servers and their versions
+issues           = Present all non-info issues
+lastupdated      = View all Windows host security patch levels
+nixpatches       = Missing *nix security patches
+outdatedsoftware = Outdated third party software 
+ports            = All identified open ports
+remediations     = All suggested fixes
+services         = Insecure Services and their weak permissions
+search           = Extract all information based on keyword e.g. "Log4j" (Requires --keyword / -k flag)
+software         = Installed third party software (warning: can be heavy!)
+ssh              = Identify all weak SSH algorithms and ciphers in use
+unencrypted      = Unencrypted protocols in use. FTP, Telnet etc.
+unquoted         = Unquoted service paths and their weak permissions
+unsupported      = Unsupported operating systems
+winpatches       = Missing Microsoft security patches
 '''))
 
 # Keep a timer to keep an eye on performance
@@ -1278,8 +1366,10 @@ else:
             extractLastUpdated() ; continue
         if 'nixpatches' == module.lower():
             extractLinuxPatches() ; continue
+        if 'outdatedsoftware' == module.lower():
+            extractOutdatedSoftware() ; continue
         if 'ports' == module.lower():
-            extractOpenPorts() ; continue
+            extractOpenPorts() ; continue            
         if 'remediations' == module.lower():
             extractRemediations() ; continue
         if 'services' == module.lower():
