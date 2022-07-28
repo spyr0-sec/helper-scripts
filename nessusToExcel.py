@@ -145,9 +145,9 @@ def extractCompliance():
     columns.append(('IP Address',15))
     columns.append(('CIS Benchmark ID',17))
     columns.append(('Result',8))
+    columns.append(('Description',200))
     columns.append(('Assessed Host value',55))
     columns.append(('CIS Policy value',55))
-    columns.append(('Description',200))
 
     tableData = []
 
@@ -170,7 +170,7 @@ def extractCompliance():
                     compliance_id,compliance_name = compliance_desc.split(' ',1)
 
                     # Write to Excel worksheet
-                    tableData.append((report_fqdn,report_ip,compliance_id,compliance_result,compliance_host_value,compliance_policy_value,compliance_name))
+                    tableData.append((report_fqdn,report_ip,compliance_id,compliance_result,compliance_name,compliance_host_value,compliance_policy_value))
 
     if len(tableData) > 0:
         ComplianceWorksheet = CreateWorksheet(workbook,'Compliance')
@@ -465,6 +465,7 @@ def extractLastUpdated():
             report_fqdn = Hosts[report_ip]
 
             lines = plugin_93962.splitlines()
+            update_level = "" 
             for line in lines:
                 if 'Latest effective update level : ' in line:
                     update_level = line.replace(' Latest effective update level : ','')
