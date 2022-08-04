@@ -23,6 +23,8 @@ import nessus_file_reader as nfr
 #                   - Added more database end of life dates
 # v1.2 - 25/07/2022 - Improved hostname resolvers. Fixed nix patching string matching. Added Debian EoL dates. Refactored compliance to cover all
 #                   - Added outdated third party software module 
+# v1.3 - 04/08/2022 - 'check Audit Trail' case fix. Added full MS patch audit to lastupdated module. Refactored nixpatches to pick up all RPM checks.
+#                   - Added severity column to outdated software and patch modules.
 
 # STANDARDS
 # Columns order - Hostname / IP Address / Other (Except for hosts which will be in reporter format of IP / Hostname / OS)
@@ -156,7 +158,7 @@ def extractCompliance():
         all_plugins = nfr.host.report_items(report_host)
         
         for plugin in all_plugins:
-            if 'Check Audit Trail' not in plugin:
+            if 'check Audit Trail' not in plugin:
                 report_ip = nfr.host.resolved_ip(report_host)
                 report_fqdn = Hosts[report_ip]
                 plugin_family = nfr.plugin.report_item_value(plugin, 'pluginFamily')
@@ -211,7 +213,7 @@ def extractDatabases():
         mssql_eol = ""
 
         # Microsoft SQL Server
-        if ('Check Audit Trail' not in unauth_mssql_plugin) or ('Check Audit Trail' not in auth_mssql_plugin):
+        if ('check Audit Trail' not in unauth_mssql_plugin) or ('check Audit Trail' not in auth_mssql_plugin):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
                     
@@ -250,7 +252,7 @@ def extractDatabases():
                     tableData.append((report_fqdn,report_ip,mssql_protocol,mssql_port,"Microsoft SQL Server",mssql_version[-1].strip(),mssql_instance[-1].strip(),mssql_eol))
 
         # MySQL 
-        if 'Check Audit Trail' not in mysql_plugin:
+        if 'check Audit Trail' not in mysql_plugin:
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
                     
@@ -281,7 +283,7 @@ def extractDatabases():
                     tableData.append((report_fqdn,report_ip,mysql_protocol,mysql_port,"MySQL",mysql_version[-1].strip(),"",mysql_eol))
 
         # PostgreSQL - Doesn't present any info from an unauth perspective
-        if 'Check Audit Trail' not in postgres_plugin:
+        if 'check Audit Trail' not in postgres_plugin:
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
                     
@@ -298,7 +300,7 @@ def extractDatabases():
                     tableData.append((report_fqdn,report_ip,postgres_protocol,postgres_port,"PostgreSQL"))
 
         # Oracle
-        if 'Check Audit Trail' not in oracle_plugin:
+        if 'check Audit Trail' not in oracle_plugin:
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
                     
@@ -320,7 +322,7 @@ def extractDatabases():
                     tableData.append((report_fqdn,report_ip,oracle_protocol,oracle_port,"Oracle Database",oracle_version[-1].strip()))           
 
         # MongoDB
-        if 'Check Audit Trail' not in mongo_plugin:
+        if 'check Audit Trail' not in mongo_plugin:
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
                     
@@ -375,7 +377,7 @@ def extractDefaultHTTP():
     for report_host in nfr.scan.report_hosts(root):
         plugin_11422 = nfr.plugin.plugin_outputs(root, report_host, '11422')
 
-        if 'Check Audit Trail' not in plugin_11422:
+        if 'check Audit Trail' not in plugin_11422:
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
 
@@ -418,7 +420,7 @@ def extractHTTPServers():
     for report_host in nfr.scan.report_hosts(root):
         plugin_10107 = nfr.plugin.plugin_outputs(root, report_host, '10107')
 
-        if 'Check Audit Trail' not in plugin_10107:
+        if 'check Audit Trail' not in plugin_10107:
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
 
@@ -445,7 +447,7 @@ def extractHTTPServers():
     if args.verbose:
         print (f'DEBUG - Completed HTTP Servers. {len(tableData)} rows took {toc - tic:0.4f} seconds')
 
-# Determine when Windows system security patch levels
+# Windows security patch audit
 def extractLastUpdated():
     tic = time.perf_counter()
 
@@ -454,13 +456,16 @@ def extractLastUpdated():
     columns.append(('Hostname',40))
     columns.append(('IP Address',15))
     columns.append(('Latest Effective Update Level',28))
+    columns.append(('Patch',28))
+    columns.append(('Installed on',28))
 
     tableData = []
 
     for report_host in nfr.scan.report_hosts(root):
+        # Microsoft Security Rollup Enumeration
         plugin_93962 = nfr.plugin.plugin_outputs(root, report_host, '93962')
 
-        if 'Check Audit Trail' not in plugin_93962:
+        if 'check Audit Trail' not in plugin_93962:
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
 
@@ -472,7 +477,24 @@ def extractLastUpdated():
 
             # Write to Excel worksheet
             tableData.append((report_fqdn,report_ip,update_level.replace('_','/')))
-    
+
+        # SMB Quick Fix Engineering patch output
+        plugin_62042 = nfr.plugin.plugin_outputs(root, report_host, '62042')
+
+        if 'check Audit Trail' not in plugin_62042:
+            report_ip = nfr.host.resolved_ip(report_host)
+            report_fqdn = Hosts[report_ip]
+            
+            lines = plugin_62042.splitlines() 
+            for line in lines:
+                if 'Installed on:' in line:
+                    patch_date = line.split(',', 1)
+                    patch = patch_date[0]
+                    date = patch_date[-1].split()
+                        
+                    # Write to Excel worksheet
+                    tableData.append((report_fqdn,report_ip,"",patch,date[-1]))
+                
     if len(tableData) > 0:
         IssuesWorksheet = CreateWorksheet(workbook,'Security Update Level')
         CreateSheetTable(columns,IssuesWorksheet)
@@ -490,6 +512,7 @@ def extractMSPatches():
     columns = []
     columns.append(('Hostname',40))
     columns.append(('IP Address',15))
+    columns.append(('Severity',10))
     columns.append(('Missing Security Patch',110))
     columns.append(('Additional Information',180))
 
@@ -500,17 +523,18 @@ def extractMSPatches():
         all_plugins = nfr.host.report_items(report_host)
         
         for plugin in all_plugins:
-            if 'Check Audit Trail' not in plugin:
+            if 'check Audit Trail' not in plugin:
                 report_ip = nfr.host.resolved_ip(report_host)
                 report_fqdn = Hosts[report_ip]
                 plugin_id = nfr.plugin.report_item_value(plugin, 'pluginID')
                 plugin_name = nfr.plugin.report_item_value(plugin, 'pluginName')
                 plugin_family = nfr.plugin.report_item_value(plugin, 'pluginFamily')
+                risk_factor = nfr.plugin.report_item_value(plugin, 'risk_factor')
 
                 if (plugin_family == "Windows : Microsoft Bulletins") and (plugin_name != "Microsoft Windows Summary of Missing Patches") and (plugin_name != "Microsoft Patch Bulletin Feasibility Check"):
                     output = nfr.plugin.plugin_output(root, report_host, plugin_id)
 
-                    tableData.append((report_fqdn,report_ip,plugin_name,output.strip()))
+                    tableData.append((report_fqdn,report_ip,risk_factor,plugin_name,output.strip()))
            
     if len(tableData) > 0:
         MSPatchesWorksheet = CreateWorksheet(workbook,'Missing Microsoft Patches')
@@ -530,34 +554,37 @@ def extractLinuxPatches():
     columns = []
     columns.append(('Hostname',40))
     columns.append(('IP Address',15))
+    columns.append(('Severity',10))
     columns.append(('Missing patch',67))
     columns.append(('Current Package Version',50))
     columns.append(('Latest Package Version',50))
 
     tableData = []
 
-    # Will need to assess each plugin for its family
+    # Local security check family misses outdated MySQL rpms among others query every output for "remote package"
     for report_host in nfr.scan.report_hosts(root):
         all_plugins = nfr.host.report_items(report_host)
         
         for plugin in all_plugins:
-            if 'Check Audit Trail' not in plugin:
-                report_ip = nfr.host.resolved_ip(report_host)
-                report_fqdn = Hosts[report_ip]
-                plugin_id = nfr.plugin.report_item_value(plugin, 'pluginID')
-                plugin_name = nfr.plugin.report_item_value(plugin, 'pluginName')
+            if 'check Audit Trail' not in plugin:
+                # Remove all info and MS Patching issues
+                risk_factor = nfr.plugin.report_item_value(plugin, 'risk_factor')
                 plugin_family = nfr.plugin.report_item_value(plugin, 'pluginFamily')
 
-                # https://www.tenable.com/plugins/nessus/families - Handily everything but Windows are captured here
-                if "Local Security Checks" in plugin_family:
-                    lines = nfr.plugin.plugin_output(root, report_host, plugin_id).splitlines()
+                if (risk_factor != 'None') and (plugin_family != 'Windows : Microsoft Bulletins'):
+                    report_ip = nfr.host.resolved_ip(report_host)
+                    report_fqdn = Hosts[report_ip]
+                    plugin_name = nfr.plugin.report_item_value(plugin, 'pluginName')
+                    plugin_id = int(nfr.plugin.report_item_value(plugin, 'pluginID'))
+                    plugin_output = nfr.plugin.plugin_outputs(root, report_host, plugin_id)
 
+                    lines = plugin_output.splitlines()
                     for line in lines:
                         if "Remote package installed" in line:
                             currentver = line.split(":",1)
                         if "Should be" in line:
                             latestver = line.split(":",1)
-                            tableData.append((report_fqdn,report_ip,plugin_name,currentver[-1].strip(),latestver[-1].strip()))
+                            tableData.append((report_fqdn,report_ip,risk_factor,plugin_name,currentver[-1].strip(),latestver[-1].strip()))
 
     if len(tableData) > 0:
         LinuxPatchesWorksheet = CreateWorksheet(workbook,'Missing Linux Patches')
@@ -628,7 +655,7 @@ def extractRemediations():
         report_ip = nfr.host.resolved_ip(report_host)
         report_fqdn = Hosts[report_ip]
 
-        if 'Check Audit Trail' not in plugin_66334:
+        if 'check Audit Trail' not in plugin_66334:
 
             remediation = io.StringIO(plugin_66334)
             for line in remediation.getvalue().split('\n'):
@@ -678,7 +705,7 @@ def extractInstalledSoftware():
         report_fqdn = Hosts[report_ip]
         
         plugin_20811 = nfr.plugin.plugin_output(root, report_host, '20811')
-        if 'Check Audit Trail' not in plugin_20811:
+        if 'check Audit Trail' not in plugin_20811:
             
             plugin_20811 = plugin_20811.replace('The following software are installed on the remote host :\n\n','')
             plugin_20811 = plugin_20811.replace('The following updates are installed :\n\n','')
@@ -710,11 +737,12 @@ def extractOutdatedSoftware():
     columns = []
     columns.append(('Hostname',40))
     columns.append(('IP Address',15))
+    columns.append(('Severity',10))
     columns.append(('Issue',100))
     columns.append(('Installed Version',70))
     columns.append(('Latest Version',55))
-    columns.append(('End of Support Date',20))
     columns.append(('Path',100))
+    columns.append(('End of Support Date',20))
 
     tableData = []
 
@@ -723,7 +751,7 @@ def extractOutdatedSoftware():
         all_plugins = nfr.host.report_items(report_host)
         
         for plugin in all_plugins:
-            if 'Check Audit Trail' not in plugin:
+            if 'check Audit Trail' not in plugin:
                 # Remove all info and MS Patching issues
                 risk_factor = nfr.plugin.report_item_value(plugin, 'risk_factor')
                 plugin_family = nfr.plugin.report_item_value(plugin, 'pluginFamily')
@@ -748,18 +776,19 @@ def extractOutdatedSoftware():
                         if 'End of support' in line or 'Support ended' in line or 'EOL date' in line:
                             eol_date = line.split(':',1)
                             eol_date = eol_date[-1].strip()       
-                        if 'Path' in line or 'Filename' in line or 'Install Path' in line:
+                        if 'Path' in line or 'Filename' in line or 'Install Path' in line or 'URL' in line:
                             installed_path = line.split(':',1)
                             installed_path = installed_path[-1].strip()
 
                         # Wait until we get to the last line of the plugin output before writing to Excel
                         if (idx == len(lines)-1) and (installed_version or latest_version or eol_date is not None):
-                            tableData.append((report_fqdn,report_ip,plugin_name,installed_version,latest_version,eol_date,installed_path))
+                            tableData.append((report_fqdn,report_ip,risk_factor,plugin_name,installed_version,latest_version,installed_path,eol_date))
                         
     if len(tableData) > 0:
         OutdatedSoftwareWorksheet = CreateWorksheet(workbook,'Outdated Software')
         CreateSheetTable(columns,OutdatedSoftwareWorksheet)
         AddTableData(tableData,OutdatedSoftwareWorksheet)
+        print (f'INFO - Use "Remove Duplicates" within Data ribbon in Excel if required.')
         
     toc = time.perf_counter()
     if args.verbose:
@@ -823,13 +852,15 @@ def extractUnquotedServicePaths():
     for report_host in nfr.scan.report_hosts(root):
                 
         plugin_63155 = nfr.plugin.plugin_outputs(root, report_host, '63155')
-        if 'Check Audit Trail' not in plugin_63155:
+        if 'check Audit Trail' not in plugin_63155:
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
 
             lines = plugin_63155.splitlines()
             for line in lines:
                 line.strip()
+
+                print(line)
 
                 if len(line) > 2 and 'Nessus found the following' not in line:
                     service,path = line.split(':',1)
@@ -948,7 +979,7 @@ def extractWeakServicePermissions():
         report_ip = nfr.host.resolved_ip(report_host)
         
         plugin_65057 = nfr.plugin.plugin_outputs(root, report_host, '65057')
-        if 'Check Audit Trail' not in plugin_65057:
+        if 'check Audit Trail' not in plugin_65057:
             report_fqdn = Hosts[report_ip]
             
             items = plugin_65057.split("\n\n")
@@ -1005,7 +1036,7 @@ def extractWeakSSHAlgorithms():
         cbc_plugin = nfr.plugin.plugin_outputs(root, report_host, '70658')
         mac_plugin = nfr.plugin.plugin_outputs(root, report_host, '71049')
 
-        if ('Check Audit Trail' not in enc_plugin) or ('Check Audit Trail' not in keyex_plugin) or ('Check Audit Trail' not in cbc_plugin) or ('Check Audit Trail' not in mac_plugin):
+        if ('check Audit Trail' not in enc_plugin) or ('check Audit Trail' not in keyex_plugin) or ('check Audit Trail' not in cbc_plugin) or ('check Audit Trail' not in mac_plugin):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
 
@@ -1020,7 +1051,7 @@ def extractWeakSSHAlgorithms():
 
                         enc_output = enc_plugin.splitlines()
                         for enc_algorithm in enc_output:
-                            if 'The following weak' not in enc_algorithm and 'Check Audit Trail' not in enc_algorithm and len(enc_algorithm) != 0:
+                            if 'The following weak' not in enc_algorithm and 'check Audit Trail' not in enc_algorithm and len(enc_algorithm) != 0:
                                 if enc_algorithm.strip() not in enc_algorithms:
                                     enc_algorithms.append(enc_algorithm.strip())
 
@@ -1029,7 +1060,7 @@ def extractWeakSSHAlgorithms():
                         
                         keyex_output = keyex_plugin.splitlines()
                         for keyex_algorithm in keyex_output:
-                            if 'The following weak key exchange' not in keyex_algorithm and 'Check Audit Trail' not in keyex_algorithm and len(keyex_algorithm) != 0:
+                            if 'The following weak key exchange' not in keyex_algorithm and 'check Audit Trail' not in keyex_algorithm and len(keyex_algorithm) != 0:
                                 if keyex_algorithm.strip() not in keyex_algorithms:                            
                                     keyex_algorithms.append(keyex_algorithm.strip())
 
@@ -1038,7 +1069,7 @@ def extractWeakSSHAlgorithms():
                         
                         cbc_output = cbc_plugin.splitlines()
                         for cbc_algorithm in cbc_output:
-                            if 'The following' not in cbc_algorithm and 'are supported :' not in cbc_algorithm and 'Check Audit Trail' not in cbc_algorithm and len(cbc_algorithm) != 0:
+                            if 'The following' not in cbc_algorithm and 'are supported :' not in cbc_algorithm and 'check Audit Trail' not in cbc_algorithm and len(cbc_algorithm) != 0:
                                 if cbc_algorithm.strip() not in cbc_algorithms:
                                     cbc_algorithms.append(cbc_algorithm.strip())
 
@@ -1047,7 +1078,7 @@ def extractWeakSSHAlgorithms():
                         mac_output = mac_plugin.splitlines()
 
                         for mac_algorithm in mac_output:
-                            if 'The following' not in mac_algorithm and 'are supported :' not in mac_algorithm and 'Check Audit Trail' not in mac_algorithm and len(mac_algorithm) != 0:
+                            if 'The following' not in mac_algorithm and 'are supported :' not in mac_algorithm and 'check Audit Trail' not in mac_algorithm and len(mac_algorithm) != 0:
                                 if mac_algorithm.strip() not in mac_algorithms:
                                     mac_algorithms.append(mac_algorithm.strip())
                     
@@ -1106,7 +1137,7 @@ def searchPlugins(keyword):
         all_plugins = nfr.host.report_items(report_host)
         
         for plugin in all_plugins:
-            if 'Check Audit Trail' not in plugin:
+            if 'check Audit Trail' not in plugin:
                 report_ip = nfr.host.resolved_ip(report_host)
                 report_fqdn = Hosts[report_ip]
                 plugin_id = nfr.plugin.report_item_value(plugin, 'pluginID')
@@ -1141,7 +1172,7 @@ def GenerateHostDictionary():
 
         if report_fqdn is None:
             # First try FQDN from NativeLanManager plugin
-            if 'Check Audit Trail' not in plugin_10785:
+            if 'check Audit Trail' not in plugin_10785:
                 lines = plugin_10785.splitlines()
                 for line in lines:
                     if 'DNS Computer Name' in line:
@@ -1150,7 +1181,7 @@ def GenerateHostDictionary():
         
         if report_fqdn is None:
             # Then try hostname plugin
-            if 'Check Audit Trail' not in plugin_55472:
+            if 'check Audit Trail' not in plugin_55472:
                 lines = plugin_55472.splitlines()
                 for line in lines:
                     if 'Hostname' in line:
