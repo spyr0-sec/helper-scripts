@@ -1,2 +1,2 @@
 nessus_file_reader==0.3.0
-XlsxWriter==3.0.2
+XlsxWriter==3.0.3
