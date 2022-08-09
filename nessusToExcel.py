@@ -1048,7 +1048,7 @@ def extractWeakSSHAlgorithms():
                         mac_output = mac_plugin.splitlines()
 
                         for mac_algorithm in mac_output:
-                            if 'The following' not in mac_algorithm and 'are supported :' not in mac_algorithm and not re.match('[Cc]heck Audit Trail', cbc_algorithm) and len(mac_algorithm) != 0:
+                            if 'The following' not in mac_algorithm and 'are supported :' not in mac_algorithm and not re.match('[Cc]heck Audit Trail', mac_algorithm) and len(mac_algorithm) != 0:
                                 if mac_algorithm.strip() not in mac_algorithms:
                                     mac_algorithms.append(mac_algorithm.strip())
                     
