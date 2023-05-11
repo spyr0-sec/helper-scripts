@@ -56,19 +56,20 @@ else
 {
     foreach ($file in $files)
     {
+        $filefullpath = $file.fullname
         # Check if this is the first file
         if ($files.IndexOf($file) -eq 0)
         {
-            Write-Host Selected $file as primary -f Green
-            Write-Host Parsing $file -f Green
-            [xml]$mergedReport = Get-Content -Path $file
+            Write-Host Selected $filefullpath as primary -f Green
+            Write-Host Parsing $filefullpath -f Green
+            [xml]$mergedReport = Get-Content -Path $filefullpath
         }
         else
         {
-            Write-Host Parsing $file -f Green
+            Write-Host Parsing $filefullpath -f Green
             
             # Get all the ReportHost nodes from the XML
-            [xml]$report = Get-Content -Path $file
+            [xml]$report = Get-Content -Path $filefullpath
             $reportHosts = $Report.NessusClientData_v2.Report.SelectNodes("ReportHost")
             
             foreach($reportHost in $reportHosts)

@@ -1,20 +1,7 @@
 #!/usr/bin/python3
 import os, re, argparse, shutil, string, time, textwrap, xlsxwriter
 from xml.etree.ElementTree import ParseError
-
-# Known issue with latest nfr pip package so require downgrade
-try:
-    import pkg_resources
-    pkg_resources.require("nessus_file_reader==0.3.0")
-    import nessus_file_reader as nfr
-except (pkg_resources.DistributionNotFound, pkg_resources.VersionConflict) as e:
-    print(f'''{e}\n\nERROR - Latest version of nessus_file_reader has known issues, please run the following commands:
-pip uninstall nessus_file_reader
-pip install nessus_file_reader==0.3.0 or pip install -r requirements.txt
-
-Further information can be found on the following webpage:
-https://github.com/spyr0-sec/helper-scripts/issues/1''')
-    exit(1)
+import nessus_file_reader as nfr
 
 # CHANGELOG
 # v0.1 - 26/01/2022 - Merged all modules into one file and created wrapper
@@ -182,7 +169,13 @@ def extractCompliance():
                 compliance_desc = nfr.plugin.report_item_value(plugin, 'compliance-check-name')
                 compliance_result = nfr.plugin.report_item_value(plugin, 'compliance-result')
 
-                compliance_id,compliance_name = compliance_desc.split(' ',1)
+                try:
+                    compliance_id,compliance_name = compliance_desc.split(' ',1)
+                except Exception as e:
+                    compliance_name = compliance_desc
+                    compliance_id = 'N.A'
+                    if args.verbose:
+                        print (f'DEBUG - If this is not a Unix machine something is wrong! (compliance-check-name) -> {e}')
 
                 # Write to Excel worksheet
                 tableData.append((report_fqdn,report_ip,compliance_id,compliance_result,compliance_name,compliance_host_value,compliance_policy_value))
@@ -592,8 +585,9 @@ def extractLinuxPatches():
                 plugin_output = nfr.plugin.plugin_outputs(root, report_host, plugin_id)
 
                 lines = plugin_output.splitlines()
+                installed_string = ["Remote package installed", "Remote version"]
                 for line in lines:
-                    if "Remote package installed" in line:
+                    if any(in_str in line for in_str in installed_string):
                         currentver = line.split(":",1)
                     if "Should be" in line:
                         latestver = line.split(":",1)
@@ -824,7 +818,7 @@ def extractUnquotedServicePaths():
     for report_host in nfr.scan.report_hosts(root):
                 
         plugin_63155 = nfr.plugin.plugin_outputs(root, report_host, '63155')
-        if not re.match('[Cc]heck Audit Trail', plugin_63155):
+        if not re.findall(r'[Cc]heck [aA]udit [tT]rail', plugin_63155) and 'not enabled' not in plugin_63155:
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
 
@@ -1327,11 +1321,11 @@ if 'compliance' in argvars['module'] or "all" in args.module:
     search_text = "cm:compliance-"
     replace_text = "compliance-"
 
-    with open(args.file, 'r') as file:
+    with open(args.file, 'r', encoding="utf-8") as file:
         data = file.read()
         data = data.replace(search_text, replace_text)
 
-    with open(args.file, 'w') as file:
+    with open(args.file, 'w', encoding="utf-8") as file:
         file.write(data)
 
 # Read XML and generate hosts list once
