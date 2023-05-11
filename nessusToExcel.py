@@ -27,6 +27,8 @@ import nessus_file_reader as nfr
 #                   - Added severity column to outdated software and patch modules.
 # v1.4 - 08/08/2022 - Added better error handling for incorrect nessus_file_reader package. Added Linux support for all installed software.
 #                   - Removed remediations module as now info is captured from outdated third party module. Removed io dependancy.
+# v1.5 - 11/05/2023 - Several bug fixes inclduing unix compliance file handing and updated nfr dependancies
+# Credit @lapolis
 
 # STANDARDS
 # Columns order - Hostname / IP Address / Other (Except for hosts which will be in reporter format of IP / Hostname / OS)
@@ -216,7 +218,7 @@ def extractDatabases():
 
         # Reinit variables each loop
         mssql_version = ["",""]; mssql_instance = ["",""]; mysql_version = ["",""]
-        mssql_eol = ""
+        mssql_eol = ""; mysql_eol = ""; mongo_eol = ""
 
         # Microsoft SQL Server
         if not (re.match('[Cc]heck Audit Trail', unauth_mssql_plugin)) or not (re.match('[Cc]heck Audit Trail', auth_mssql_plugin)):
