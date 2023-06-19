@@ -1174,11 +1174,10 @@ def GenerateHostDictionary():
 # -------------------------------------------------------------------------------
 # Excel Functions -  First create our Excel workbook
 def CreateWorkBook(workBookName):
-    excelPath = os.getcwd() + os.sep + workBookName
-    workbook = xlsxwriter.Workbook(excelPath)
+    workbook = xlsxwriter.Workbook(workBookName)
     
     if args.verbose:
-        print(f'DEBUG - Using Excel output file: {excelPath}')
+        print(f'DEBUG - Using Excel output file: {workBookName}')
     
     return workbook
 
