@@ -990,13 +990,13 @@ def extractWeakSSHAlgorithms():
     columns.append(('Weak Key Exchange Algorithm',33))
     columns.append(('Weak Cipher Block Chaining Cipher',33))
     columns.append(('Weak Message Authentication Code Algorithm',44))
-
-    # Initialize some variables
-    enc_algorithms = []; keyex_algorithms = []; cbc_algorithms = []; mac_algorithms = []
-
+    
     tableData = []
-
+    
     for report_host in nfr.scan.report_hosts(root):
+        # Initialize some variables
+        enc_algorithms = []; keyex_algorithms = []; cbc_algorithms = []; mac_algorithms = []
+        
         enc_plugin = nfr.plugin.plugin_outputs(root, report_host, '90317')
         keyex_plugin = nfr.plugin.plugin_outputs(root, report_host, '153953')
         cbc_plugin = nfr.plugin.plugin_outputs(root, report_host, '70658')
