@@ -1053,7 +1053,7 @@ def extractWeakSSHAlgorithms():
 
             ipComplete = False
             r = 0
-            while ipComplete is False:
+            while ipComplete == False:
                 if len(enc_algorithms) > r:
                     enc = enc_algorithms[r]
                 else:
@@ -1071,7 +1071,7 @@ def extractWeakSSHAlgorithms():
                 else:
                     mac = ""
                 if enc == "" and kek == "" and cbc == "" and mac == "":
-                    break
+                    ipComplete = True
                 else:
                     tableData.append((report_fqdn,report_ip,ssh_protocol,ssh_port,enc,kek,cbc,mac))
                     r += 1
