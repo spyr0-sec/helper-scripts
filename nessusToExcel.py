@@ -524,6 +524,9 @@ def extractMSPatches():
     columns.append(('Missing Security Patch',110))
     columns.append(('Additional Information',180))
 
+    # Plugin ID  is for 'Security Updates for Microsoft Office Products C2R (August 2023)'
+    plugin_id_include = '179614'
+
     tableData = []
 
     # Will need to assess each plugin for its family
@@ -538,7 +541,7 @@ def extractMSPatches():
             plugin_family = nfr.plugin.report_item_value(plugin, 'pluginFamily')
             risk_factor = nfr.plugin.report_item_value(plugin, 'risk_factor')
 
-            if (plugin_family == "Windows : Microsoft Bulletins") and (plugin_name != "Microsoft Windows Summary of Missing Patches") and (plugin_name != "Microsoft Patch Bulletin Feasibility Check"):
+            if (plugin_family == "Windows : Microsoft Bulletins") and (plugin_name != "Microsoft Windows Summary of Missing Patches") and (plugin_name != "Microsoft Patch Bulletin Feasibility Check") or (plugin_id == plugin_id_include):
                 output = nfr.plugin.plugin_output(root, report_host, plugin_id)
 
                 tableData.append((report_fqdn,report_ip,risk_factor,plugin_name,output.strip()))
@@ -579,7 +582,7 @@ def extractLinuxPatches():
             risk_factor = nfr.plugin.report_item_value(plugin, 'risk_factor')
             plugin_family = nfr.plugin.report_item_value(plugin, 'pluginFamily')
 
-            if (risk_factor != 'None') and (plugin_family != 'Windows : Microsoft Bulletins'):
+            if (risk_factor != 'None') and (plugin_family not in ['Windows : Microsoft Bulletins', 'Windows']):
                 report_ip = nfr.host.resolved_ip(report_host)
                 report_fqdn = Hosts[report_ip]
                 plugin_name = nfr.plugin.report_item_value(plugin, 'pluginName')
