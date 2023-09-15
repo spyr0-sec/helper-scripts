@@ -58,6 +58,7 @@ def extractAll():
     extractUnsupportedOperatingSystems()
     extractWeakServicePermissions()
     extractWeakSSHAlgorithms()
+    extractWMIAvailable()
 
 # Extract system information
 def extractHosts():
@@ -524,9 +525,6 @@ def extractMSPatches():
     columns.append(('Missing Security Patch',110))
     columns.append(('Additional Information',180))
 
-    # Plugin ID  is for 'Security Updates for Microsoft Office Products C2R (August 2023)'
-    plugin_id_include = '179614'
-
     tableData = []
 
     # Will need to assess each plugin for its family
@@ -541,7 +539,7 @@ def extractMSPatches():
             plugin_family = nfr.plugin.report_item_value(plugin, 'pluginFamily')
             risk_factor = nfr.plugin.report_item_value(plugin, 'risk_factor')
 
-            if (plugin_family == "Windows : Microsoft Bulletins") and (plugin_name != "Microsoft Windows Summary of Missing Patches") and (plugin_name != "Microsoft Patch Bulletin Feasibility Check") or (plugin_id == plugin_id_include):
+            if (plugin_family == "Windows : Microsoft Bulletins") and (plugin_name != "Microsoft Windows Summary of Missing Patches") and (plugin_name != "Microsoft Patch Bulletin Feasibility Check"):
                 output = nfr.plugin.plugin_output(root, report_host, plugin_id)
 
                 tableData.append((report_fqdn,report_ip,risk_factor,plugin_name,output.strip()))
@@ -582,7 +580,7 @@ def extractLinuxPatches():
             risk_factor = nfr.plugin.report_item_value(plugin, 'risk_factor')
             plugin_family = nfr.plugin.report_item_value(plugin, 'pluginFamily')
 
-            if (risk_factor != 'None') and (plugin_family not in ['Windows : Microsoft Bulletins', 'Windows']):
+            if (risk_factor != 'None') and (plugin_family != 'Windows : Microsoft Bulletins'):
                 report_ip = nfr.host.resolved_ip(report_host)
                 report_fqdn = Hosts[report_ip]
                 plugin_name = nfr.plugin.report_item_value(plugin, 'pluginName')
@@ -1088,6 +1086,44 @@ def extractWeakSSHAlgorithms():
     if args.verbose:
         print (f'DEBUG - Completed Weak SSH Algorithms and Ciphers. {len(tableData)} rows took {toc - tic:0.4f} seconds')
 
+# Extract list of hosts with WMI Available (Cred Patch Possible/Successful)
+def extractWMIAvailable():
+    tic = time.perf_counter()
+
+    # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
+    columns = []
+    columns.append(('Hostname',40))
+    columns.append(('IP Address',15))
+    columns.append(('Operating System',60))
+    columns.append(('Plugin',15))
+
+    tableData = []
+    for report_host in nfr.scan.report_hosts(root):
+        report_items_per_host = nfr.host.report_items(report_host)
+
+        for report_item in report_items_per_host:
+            plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
+
+            # Filtering pluign "WMI Available"
+            if plugin_id == 24269:
+                report_ip = nfr.host.resolved_ip(report_host)
+                report_fqdn = Hosts[report_ip]
+                report_host_os = nfr.host.detected_os(report_host)
+                
+                if (report_host_os is None or report_host_os.count('\n') > 0):
+                    report_host_os = ""
+
+                tableData.append((report_fqdn,report_ip,report_host_os,'WMI Available'))
+
+    if len(tableData) > 0:
+        WMIAvailableWorksheet = CreateWorksheet(workbook,'WMI Available')
+        CreateSheetTable(columns,WMIAvailableWorksheet)
+        AddTableData(tableData,WMIAvailableWorksheet)
+    
+    toc = time.perf_counter()
+    if args.verbose:
+        print (f'DEBUG - Completed WMI Available. {len(tableData)} rows took {toc - tic:0.4f} seconds')
+
 # Search plugins by keyword to pull out all relevant info
 def searchPlugins(keyword):
     tic = time.perf_counter()
@@ -1251,6 +1287,7 @@ unencrypted      = Unencrypted protocols in use. FTP, Telnet etc.
 unquoted         = Unquoted service paths and their weak permissions
 unsupported      = Unsupported operating systems
 winpatches       = Missing Microsoft security patches
+wmi              = Hosts with WMI Available
 '''))
 
 # Keep a timer to keep an eye on performance
@@ -1389,6 +1426,8 @@ else:
                 searchPlugins(args.keyword)
             else: 
                 raise ValueError("Search module requires a keyword")
+        if ('wmi' == module.lower()):
+            extractWMIAvailable()
         else:
             print(f'WARN - provided module "{module}" is invalid. Omitting')     
 
