@@ -58,6 +58,7 @@ def extractAll():
     extractUnsupportedOperatingSystems()
     extractWeakServicePermissions()
     extractWeakSSHAlgorithms()
+    extractWMIAvailable()
 
 # Extract system information
 def extractHosts():
@@ -587,11 +588,12 @@ def extractLinuxPatches():
                 plugin_output = nfr.plugin.plugin_outputs(root, report_host, plugin_id)
 
                 lines = plugin_output.splitlines()
-                installed_string = ["Remote package installed", "Remote version"]
+                installed_string = ["Remote package installed", "Remote version", "Installed package"]
+                updated_string = ["Fixed package", "Should be"]
                 for line in lines:
                     if any(in_str in line for in_str in installed_string):
                         currentver = line.split(":",1)
-                    if "Should be" in line:
+                    if any(in_str in line for in_str in updated_string):
                         latestver = line.split(":",1)
                         tableData.append((report_fqdn,report_ip,risk_factor,plugin_name,currentver[-1].strip(),latestver[-1].strip()))
 
@@ -1085,6 +1087,44 @@ def extractWeakSSHAlgorithms():
     if args.verbose:
         print (f'DEBUG - Completed Weak SSH Algorithms and Ciphers. {len(tableData)} rows took {toc - tic:0.4f} seconds')
 
+# Extract list of hosts with WMI Available (Cred Patch Possible/Successful)
+def extractWMIAvailable():
+    tic = time.perf_counter()
+
+    # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
+    columns = []
+    columns.append(('Hostname',40))
+    columns.append(('IP Address',15))
+    columns.append(('Operating System',60))
+    columns.append(('Plugin',15))
+
+    tableData = []
+    for report_host in nfr.scan.report_hosts(root):
+        report_items_per_host = nfr.host.report_items(report_host)
+
+        for report_item in report_items_per_host:
+            plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
+
+            # Filtering pluign "WMI Available"
+            if plugin_id == 24269:
+                report_ip = nfr.host.resolved_ip(report_host)
+                report_fqdn = Hosts[report_ip]
+                report_host_os = nfr.host.detected_os(report_host)
+                
+                if (report_host_os is None or report_host_os.count('\n') > 0):
+                    report_host_os = ""
+
+                tableData.append((report_fqdn,report_ip,report_host_os,'WMI Available'))
+
+    if len(tableData) > 0:
+        WMIAvailableWorksheet = CreateWorksheet(workbook,'WMI Available')
+        CreateSheetTable(columns,WMIAvailableWorksheet)
+        AddTableData(tableData,WMIAvailableWorksheet)
+    
+    toc = time.perf_counter()
+    if args.verbose:
+        print (f'DEBUG - Completed WMI Available. {len(tableData)} rows took {toc - tic:0.4f} seconds')
+
 # Search plugins by keyword to pull out all relevant info
 def searchPlugins(keyword):
     tic = time.perf_counter()
@@ -1248,6 +1288,7 @@ unencrypted      = Unencrypted protocols in use. FTP, Telnet etc.
 unquoted         = Unquoted service paths and their weak permissions
 unsupported      = Unsupported operating systems
 winpatches       = Missing Microsoft security patches
+wmi              = Hosts with WMI Available
 '''))
 
 # Keep a timer to keep an eye on performance
@@ -1386,6 +1427,8 @@ else:
                 searchPlugins(args.keyword)
             else: 
                 raise ValueError("Search module requires a keyword")
+        if ('wmi' == module.lower()):
+            extractWMIAvailable()
         else:
             print(f'WARN - provided module "{module}" is invalid. Omitting')     
 
