@@ -588,11 +588,12 @@ def extractLinuxPatches():
                 plugin_output = nfr.plugin.plugin_outputs(root, report_host, plugin_id)
 
                 lines = plugin_output.splitlines()
-                installed_string = ["Remote package installed", "Remote version"]
+                installed_string = ["Remote package installed", "Remote version", "Installed package"]
+                updated_string = ["Fixed package", "Should be"]
                 for line in lines:
                     if any(in_str in line for in_str in installed_string):
                         currentver = line.split(":",1)
-                    if "Should be" in line:
+                    if any(in_str in line for in_str in updated_string):
                         latestver = line.split(":",1)
                         tableData.append((report_fqdn,report_ip,risk_factor,plugin_name,currentver[-1].strip(),latestver[-1].strip()))
 
