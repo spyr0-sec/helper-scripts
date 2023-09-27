@@ -874,7 +874,9 @@ def extractUnsupportedOperatingSystems():
             if 'Microsoft Windows Server 2003' in report_host_os:
                 tableData.append((report_fqdn,report_ip,report_host_os,"13 July 2010","14 July 2015",""))
             if 'Microsoft Windows Server 2008' in report_host_os:
-                tableData.append((report_fqdn,report_ip,report_host_os,"13 January 2015","14 January 2020","10 January 2023"))            
+                tableData.append((report_fqdn,report_ip,report_host_os,"13 January 2015","14 January 2020","10 January 2023"))
+            if 'Microsoft Windows Server 2012' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"09 October 2018","10 October 2023","13 October 2026"))   
             if 'Microsoft Windows XP' in report_host_os:
                 tableData.append((report_fqdn,report_ip,report_host_os,"14 April 2009","08 April 2014",""))
             if 'Microsoft Windows Vista' in report_host_os:
