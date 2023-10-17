@@ -523,6 +523,8 @@ def extractMSPatches():
     columns.append(('IP Address',15))
     columns.append(('Severity',10))
     columns.append(('Missing Security Patch',110))
+    columns.append(('Exploit Available',17))
+    columns.append(('CVE',17))
     columns.append(('Additional Information',180))
 
     tableData = []
@@ -538,15 +540,29 @@ def extractMSPatches():
             plugin_name = nfr.plugin.report_item_value(plugin, 'pluginName')
             plugin_family = nfr.plugin.report_item_value(plugin, 'pluginFamily')
             risk_factor = nfr.plugin.report_item_value(plugin, 'risk_factor')
+            exploitability_ease = nfr.plugin.report_item_value(plugin, 'exploitability_ease')
+            cve_list = nfr.plugin.report_item_values(plugin, 'cve')
+
+            if exploitability_ease == 'No known exploits are available':
+                exploit_exists = 'No'
+            elif exploitability_ease == 'Exploits are available':
+                exploit_exists = 'Yes'
+            else:
+                # leaving this one here for potential debugging
+                exploit_exists = '???'
+            
+            if cve_list:
+                cve_text = '\n'.join(cve_list)
+            else:
+                cve_text = 'NA'
 
             if (plugin_family == "Windows : Microsoft Bulletins") and (plugin_name != "Microsoft Windows Summary of Missing Patches") and (plugin_name != "Microsoft Patch Bulletin Feasibility Check"):
                 output = nfr.plugin.plugin_output(root, report_host, plugin_id)
-                tableData.append((report_fqdn,report_ip,risk_factor,plugin_name,output.strip()))
+                tableData.append((report_fqdn,report_ip,risk_factor,plugin_name,exploit_exists,cve_text,output.strip()))
 
             elif (plugin_family == "Windows") and (plugin_name.startswith('Security Updates for ')):
                 output = nfr.plugin.plugin_output(root, report_host, plugin_id)
-                tableData.append((report_fqdn,report_ip,risk_factor,plugin_name,output.strip()))
-
+                tableData.append((report_fqdn,report_ip,risk_factor,plugin_name,exploit_exists,cve_text,output.strip()))
            
     if len(tableData) > 0:
         MSPatchesWorksheet = CreateWorksheet(workbook,'Missing Microsoft Patches')
@@ -558,7 +574,7 @@ def extractMSPatches():
         print (f'DEBUG - Completed Microsoft Patches. {len(tableData)} rows took {toc - tic:0.4f} seconds')
 
     if len(tableData) > 0:
-        print ("INFO - Please text wrap column D within the Missing Microsoft Patches worksheet. Highlight column -> Home -> Wrap Text")
+        print ("INFO - Please text wrap column F and G within the Missing Microsoft Patches worksheet. Highlight column -> Home -> Wrap Text")
 
 # Extract all missing Linux security patches
 def extractLinuxPatches():
@@ -572,6 +588,8 @@ def extractLinuxPatches():
     columns.append(('Missing patch',67))
     columns.append(('Current Package Version',50))
     columns.append(('Latest Package Version',50))
+    columns.append(('Exploit Available',17))
+    columns.append(('CVE',17))
 
     tableData = []
 
@@ -590,6 +608,21 @@ def extractLinuxPatches():
                 plugin_name = nfr.plugin.report_item_value(plugin, 'pluginName')
                 plugin_id = int(nfr.plugin.report_item_value(plugin, 'pluginID'))
                 plugin_output = nfr.plugin.plugin_outputs(root, report_host, plugin_id)
+                exploitability_ease = nfr.plugin.report_item_value(plugin, 'exploitability_ease')
+                cve_list = nfr.plugin.report_item_values(plugin, 'cve')
+
+                if exploitability_ease == 'No known exploits are available':
+                    exploit_exists = 'No'
+                elif exploitability_ease == 'Exploits are available':
+                    exploit_exists = 'Yes'
+                else:
+                    # leaving this one here for potential debugging
+                    exploit_exists = '???'
+                
+                if cve_list:
+                    cve_text = '\n'.join(cve_list)
+                else:
+                    cve_text = 'NA'
 
                 lines = plugin_output.splitlines()
                 installed_string = ["Remote package installed", "Remote version", "Installed package"]
@@ -599,7 +632,7 @@ def extractLinuxPatches():
                         currentver = line.split(":",1)
                     if any(in_str in line for in_str in updated_string):
                         latestver = line.split(":",1)
-                        tableData.append((report_fqdn,report_ip,risk_factor,plugin_name,currentver[-1].strip(),latestver[-1].strip()))
+                        tableData.append((report_fqdn,report_ip,risk_factor,plugin_name,currentver[-1].strip(),latestver[-1].strip(),exploit_exists,cve_text))
 
     if len(tableData) > 0:
         LinuxPatchesWorksheet = CreateWorksheet(workbook,'Missing Linux Patches')
@@ -712,6 +745,8 @@ def extractOutdatedSoftware():
     columns.append(('IP Address',15))
     columns.append(('Severity',10))
     columns.append(('Issue',100))
+    columns.append(('Exploit Available',17))
+    columns.append(('CVE',17))
     columns.append(('Installed Version',70))
     columns.append(('Latest Version',55))
     columns.append(('Path',100))
@@ -734,6 +769,24 @@ def extractOutdatedSoftware():
                 report_fqdn = Hosts[report_ip]
                 plugin_id = int(nfr.plugin.report_item_value(plugin, 'pluginID'))
                 plugin_output = nfr.plugin.plugin_outputs(root, report_host, plugin_id)
+                exploitability_ease = nfr.plugin.report_item_value(plugin, 'exploitability_ease')
+                cve_list = nfr.plugin.report_item_values(plugin, 'cve')
+
+                if exploitability_ease == 'No known exploits are available':
+                    exploit_exists = 'No'
+                elif exploitability_ease == 'Exploits are available':
+                    exploit_exists = 'Yes'
+                # this is when a software is EoL
+                elif exploitability_ease == None:
+                    exploit_exists = '-'
+                # leaving this one here for potential debugging
+                else:
+                    exploit_exists = '???'
+                
+                if cve_list:
+                    cve_text = '\n'.join(cve_list)
+                else:
+                    cve_text = 'NA'
 
                 installed_version = None; latest_version = None; eol_date = None; installed_path = None
 
@@ -754,7 +807,7 @@ def extractOutdatedSoftware():
 
                     # Wait until we get to the last line of the plugin output before writing to Excel
                     if (idx == len(lines)-1) and (installed_version or latest_version or eol_date is not None):
-                        tableData.append((report_fqdn,report_ip,risk_factor,plugin_name,installed_version,latest_version,installed_path,eol_date))
+                        tableData.append((report_fqdn,report_ip,risk_factor,plugin_name,exploit_exists,cve_text,installed_version,latest_version,installed_path,eol_date))
                         
     if len(tableData) > 0:
         OutdatedSoftwareWorksheet = CreateWorksheet(workbook,'Outdated Software')
@@ -878,7 +931,9 @@ def extractUnsupportedOperatingSystems():
             if 'Microsoft Windows Server 2003' in report_host_os:
                 tableData.append((report_fqdn,report_ip,report_host_os,"13 July 2010","14 July 2015",""))
             if 'Microsoft Windows Server 2008' in report_host_os:
-                tableData.append((report_fqdn,report_ip,report_host_os,"13 January 2015","14 January 2020","10 January 2023"))            
+                tableData.append((report_fqdn,report_ip,report_host_os,"13 January 2015","14 January 2020","10 January 2023"))
+            if 'Microsoft Windows Server 2012' in report_host_os:
+                tableData.append((report_fqdn,report_ip,report_host_os,"09 October 2018","10 October 2023","13 October 2026"))   
             if 'Microsoft Windows XP' in report_host_os:
                 tableData.append((report_fqdn,report_ip,report_host_os,"14 April 2009","08 April 2014",""))
             if 'Microsoft Windows Vista' in report_host_os:
