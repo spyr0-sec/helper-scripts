@@ -643,6 +643,9 @@ def extractLinuxPatches():
     if args.verbose:
         print (f'DEBUG - Completed Linux Patches. {len(tableData)} rows took {toc - tic:0.4f} seconds')
 
+    if len(tableData) > 0:
+        print ("INFO - Please text wrap column H within the Missing Linux Patches worksheet. Highlight column -> Home -> Wrap Text")
+
 # Extract all open ports
 def extractOpenPorts():
     tic = time.perf_counter()
@@ -820,6 +823,9 @@ def extractOutdatedSoftware():
 
     if len(tableData) > 0:
         print (f'INFO - Use "Remove Duplicates" on the Outdated Software worksheet if required. Can be found within the Data ribbon in Excel')
+    
+    if len(tableData) > 0:
+        print ("INFO - Please text wrap column F within the Outdated Software worksheet. Highlight column -> Home -> Wrap Text")
 
 # Identify all unencrypted protcols in use
 def extractUnencryptedProtocols():
