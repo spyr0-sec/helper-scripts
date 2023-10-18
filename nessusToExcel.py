@@ -280,7 +280,7 @@ def extractDatabases():
                             mysql_five_five = re.match(r'5[.]5[.]', mysql_version[-1].strip())
                             mysql_five_six = re.match(r'5[.]6[.]', mysql_version[-1].strip())
 
-                            if mysql_five_zero: mysql_eol = "09 January 2012"                            
+                            if mysql_five_zero: mysql_eol = "09 January 2012"
                             if mysql_five_one: mysql_eol  = "31 December 2013"
                             if mysql_five_five: mysql_eol = "03 December 2018"
                             if mysql_five_six: mysql_eol  = "05 February 2021"
@@ -328,7 +328,7 @@ def extractDatabases():
                     oracle_port = nfr.plugin.report_item_value(report_item, 'port')
 
                     # Write to Excel worksheet
-                    tableData.append((report_fqdn,report_ip,oracle_protocol,oracle_port,"Oracle Database",oracle_version[-1].strip()))           
+                    tableData.append((report_fqdn,report_ip,oracle_protocol,oracle_port,"Oracle Database",oracle_version[-1].strip())) 
 
         # MongoDB
         if not re.match('[Cc]heck Audit Trail', mongo_plugin):
@@ -350,15 +350,15 @@ def extractDatabases():
                             mongo_two = re.match(r"^2[.][1-9][.]", mongo_version[-1].strip())
                             mongo_three = re.match(r"^3[.][1-9][.]", mongo_version[-1].strip())
 
-                            if mongo_one: mongo_eol = "01 September 2012"                            
+                            if mongo_one: mongo_eol = "01 September 2012"
                             if mongo_two: mongo_eol  = "01 October 2016"
-                            if mongo_three: mongo_eol = "30 April 2021"                        
+                            if mongo_three: mongo_eol = "30 April 2021" 
 
                     mongo_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
                     mongo_port = nfr.plugin.report_item_value(report_item, 'port')
 
                     # Write to Excel worksheet
-                    tableData.append((report_fqdn,report_ip,mongo_protocol,mongo_port,"MongoDB",mongo_version[-1].strip(),"",mongo_eol))     
+                    tableData.append((report_fqdn,report_ip,mongo_protocol,mongo_port,"MongoDB",mongo_version[-1].strip(),"",mongo_eol)) 
     
     if len(tableData) > 0:
         DatabaseWorksheet = CreateWorksheet(workbook,'Databases')
@@ -803,7 +803,7 @@ def extractOutdatedSoftware():
                         latest_version = latest_version[-1].strip()
                     if 'End of support' in line or 'Support ended' in line or 'EOL date' in line:
                         eol_date = line.split(':',1)
-                        eol_date = eol_date[-1].strip()       
+                        eol_date = eol_date[-1].strip() 
                     if 'Path' in line or 'Filename' in line or 'Install Path' in line or 'URL' in line:
                         installed_path = line.split(':',1)
                         installed_path = installed_path[-1].strip()
@@ -931,7 +931,7 @@ def extractUnsupportedOperatingSystems():
         report_host_os = nfr.host.detected_os(report_host)
 
         if report_host_os is not None and report_host_os.count('\n') == 0:
-            # https://docs.microsoft.com/en-gb/lifecycle/products/            
+            # https://docs.microsoft.com/en-gb/lifecycle/products/
             if 'Microsoft Windows 2000' in report_host_os:
                 tableData.append((report_fqdn,report_ip,report_host_os,"30 June 2005","13 July 2010",""))
             if 'Microsoft Windows Server 2003' in report_host_os:
@@ -939,7 +939,7 @@ def extractUnsupportedOperatingSystems():
             if 'Microsoft Windows Server 2008' in report_host_os:
                 tableData.append((report_fqdn,report_ip,report_host_os,"13 January 2015","14 January 2020","10 January 2023"))
             if 'Microsoft Windows Server 2012' in report_host_os:
-                tableData.append((report_fqdn,report_ip,report_host_os,"09 October 2018","10 October 2023","13 October 2026"))   
+                tableData.append((report_fqdn,report_ip,report_host_os,"09 October 2018","10 October 2023","13 October 2026")) 
             if 'Microsoft Windows XP' in report_host_os:
                 tableData.append((report_fqdn,report_ip,report_host_os,"14 April 2009","08 April 2014",""))
             if 'Microsoft Windows Vista' in report_host_os:
@@ -947,7 +947,7 @@ def extractUnsupportedOperatingSystems():
             if 'Microsoft Windows 7' in report_host_os:
                 tableData.append((report_fqdn,report_ip,report_host_os,"13 January 2015","14 January 2020","10 January 2023"))
             if 'Microsoft Windows 8' in report_host_os:
-                tableData.append((report_fqdn,report_ip,report_host_os,"","12 January 2016",""))                   
+                tableData.append((report_fqdn,report_ip,report_host_os,"","12 January 2016","")) 
         # https://endoflife.date/   https://endoflife.software/
             if 'VMware ESXi 5.5' in report_host_os:
                 tableData.append((report_fqdn,report_ip,report_host_os,"19 September 2015","19 September 2020",""))
@@ -974,7 +974,7 @@ def extractUnsupportedOperatingSystems():
             if 'Debian 8' in report_host_os:
                 tableData.append((report_fqdn,report_ip,report_host_os,"17 June 2018","30 June 2020","30 June 2022"))
             if 'Debian 9' in report_host_os:
-                tableData.append((report_fqdn,report_ip,report_host_os,"01 January 2020","30 June 2022",""))                                                
+                tableData.append((report_fqdn,report_ip,report_host_os,"01 January 2020","30 June 2022",""))
         # https://www.freebsd.org/security/unsupported/
             if 'FreeBSD 9.' in report_host_os:
                 tableData.append((report_fqdn,report_ip,report_host_os,"31 December 2016","",""))
@@ -1089,16 +1089,16 @@ def extractWeakSSHAlgorithms():
                                     enc_algorithms.append(enc_algorithm.strip())
 
                     # Weak key exchange ciphers
-                    if plugin_id == 153953:                  
+                    if plugin_id == 153953: 
                         
                         keyex_output = keyex_plugin.splitlines()
                         for keyex_algorithm in keyex_output:
                             if 'The following weak key exchange' not in keyex_algorithm and not re.match('[Cc]heck Audit Trail', keyex_algorithm) and len(keyex_algorithm) != 0:
-                                if keyex_algorithm.strip() not in keyex_algorithms:                            
+                                if keyex_algorithm.strip() not in keyex_algorithms: 
                                     keyex_algorithms.append(keyex_algorithm.strip())
 
                     # Weak CBC ciphers
-                    if plugin_id == 70658:                       
+                    if plugin_id == 70658: 
                         
                         cbc_output = cbc_plugin.splitlines()
                         for cbc_algorithm in cbc_output:
@@ -1107,7 +1107,7 @@ def extractWeakSSHAlgorithms():
                                     cbc_algorithms.append(cbc_algorithm.strip())
 
                     # Weak MAC ciphers
-                    if plugin_id == 71049:                   
+                    if plugin_id == 71049: 
                         mac_output = mac_plugin.splitlines()
 
                         for mac_algorithm in mac_output:
@@ -1178,9 +1178,9 @@ def extractCredPatch():
             if (report_host_os is None or report_host_os.count('\n') > 0):
                 report_host_os = ""
 
-            tableData.append((report_fqdn,report_ip,report_host_os,'WMI Available (Windows  CredPAtch)'))
+            tableData.append((report_fqdn,report_ip,report_host_os,'WMI Available (Windows CredPatch)'))
 
-        # Filtering pluign "Patch Report" expluding hosts with "WMI Available"
+        # Filtering plugin "Patch Report" expluding hosts with "WMI Available"
         elif 66334 in plugin_ids:
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
@@ -1189,7 +1189,7 @@ def extractCredPatch():
             if (report_host_os is None or report_host_os.count('\n') > 0):
                 report_host_os = ""
 
-            tableData.append((report_fqdn,report_ip,report_host_os,'Patch Report Available (Linux CredPAtch)'))
+            tableData.append((report_fqdn,report_ip,report_host_os,'Patch Report Available (Linux CredPatch)'))
 
     if len(tableData) > 0:
         WMIAvailableWorksheet = CreateWorksheet(workbook,'CredPatch Hosts')
@@ -1250,7 +1250,7 @@ def GenerateHostDictionary():
         report_fqdn = nfr.host.resolved_fqdn(report_host)
 
         plugin_10785 = nfr.plugin.plugin_outputs(root, report_host, '10785')
-        plugin_55472 = nfr.plugin.plugin_outputs(root, report_host, '55472')    
+        plugin_55472 = nfr.plugin.plugin_outputs(root, report_host, '55472')
 
         if report_fqdn is None:
             # First try FQDN from NativeLanManager plugin
@@ -1287,7 +1287,7 @@ def GenerateHostDictionary():
             print (f'DEBUG - Hosts List Generated. {len(Hosts)} rows took {toc - tic:0.4f} seconds')
 
 # -------------------------------------------------------------------------------
-# Excel Functions -  First create our Excel workbook
+# Excel Functions - First create our Excel workbook
 def CreateWorkBook(workBookName):
     workbook = xlsxwriter.Workbook(workBookName)
     
@@ -1466,7 +1466,7 @@ else:
         if 'compliance' == module.lower():
             extractCompliance() ; continue
         if 'databases' == module.lower():
-            extractDatabases() ; continue               
+            extractDatabases() ; continue 
         if 'defaulthttp' == module.lower():
             extractDefaultHTTP() ; continue
         if 'hosts' == module.lower():
@@ -1482,7 +1482,7 @@ else:
         if 'outdatedsoftware' == module.lower():
             extractOutdatedSoftware() ; continue
         if 'ports' == module.lower():
-            extractOpenPorts() ; continue            
+            extractOpenPorts() ; continue
         if 'services' == module.lower():
             extractWeakServicePermissions() ; continue
         if 'software' == module.lower():
@@ -1505,7 +1505,7 @@ else:
         if ('credpatch' == module.lower()):
             extractCredPatch()
         else:
-            print(f'WARN - provided module "{module}" is invalid. Omitting')     
+            print(f'WARN - provided module "{module}" is invalid. Omitting') 
 
 toc = time.perf_counter()
 print (f'COMPLETED! Output can be found in {os.getcwd()}{os.sep}{args.out} Total time taken: {toc - tic:0.4f} seconds')
