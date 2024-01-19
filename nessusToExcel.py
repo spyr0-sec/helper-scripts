@@ -1416,20 +1416,21 @@ argvars['module'] = [mod.strip() for mod in argvars['module'].split(",")]
 if 'compliance' in argvars['module'] or "all" in args.module:
 
     # Will ask user if they would like to take a backup of the Nessus file first as we are manipulating it
-    backupPath = os.getcwd() + os.sep + f'{args.file}.bak'
+    backup_file = re.sub('\.nessus$', '_BACKUP.nessus', args.file)
+    backupPath = os.getcwd() + os.sep + f'{backup_file}'
     if not os.path.isfile(backupPath):
         if args.quiet:
             if args.verbose:
-                print(f'DEBUG - Taking backup of Nessus file - {os.getcwd()}{os.sep}{args.file}.bak')
+                print(f'DEBUG - Taking backup of Nessus file - {os.getcwd()}{os.sep}{backup_file}')
 
-            shutil.copyfile(args.file, f'{args.file}.bak')
+            shutil.copyfile(args.file, f'{backup_file}')
         else:
             comp_answer = input("To extract compliance output, changes to XML tags are required. While this should not cause any further issues, would you like to take a backup of your Nessus file first? [Y/n] ")
             if comp_answer == 'Y' or comp_answer == 'Yes' or comp_answer == 'y' or comp_answer == 'yes' or comp_answer == '':
                 if args.verbose:
-                    print(f'DEBUG - Taking backup of Nessus file - {os.getcwd()}{os.sep}{args.file}.bak')
+                    print(f'DEBUG - Taking backup of Nessus file - {os.getcwd()}{os.sep}{backup_file}')
 
-                shutil.copyfile(args.file, f'{args.file}.bak')
+                shutil.copyfile(args.file, f'{backup_file}')
     else:
         if args.verbose:
             print(f'DEBUG - Nessus backup file already exists, continuing')
