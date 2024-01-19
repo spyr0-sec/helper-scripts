@@ -20,7 +20,7 @@ Recommended to put this directory in your PATH so you can execute scripts from a
 
 [Nessus merger](https://github.com/0xprime/NessusReportMerger.git) - has been modified with pwsh shebang to work on WSL / Linux & reversed \ to / to support *nix filepaths.
 
-## nessusToExcel Extractor
+## nessusToExcel Extractor - DO NOT USE FOR NOW
 
 This script will take in a single file or directory of nessus files and will output an Excel Workbook as well a Host Information.txt file in your current working directory.
 
