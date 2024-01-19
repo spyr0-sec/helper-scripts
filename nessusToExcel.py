@@ -2,6 +2,7 @@
 import os, re, argparse, shutil, string, time, textwrap, xlsxwriter
 from xml.etree.ElementTree import ParseError
 import nessus_file_reader as nfr
+import pandas as pd
 
 # CHANGELOG
 # v0.1 - 26/01/2022 - Merged all modules into one file and created wrapper
@@ -27,7 +28,9 @@ import nessus_file_reader as nfr
 #                   - Added severity column to outdated software and patch modules.
 # v1.4 - 08/08/2022 - Added better error handling for incorrect nessus_file_reader package. Added Linux support for all installed software.
 #                   - Removed remediations module as now info is captured from outdated third party module. Removed io dependancy.
-# v1.5 - 11/05/2023 - Several bug fixes inclduing unix compliance file handing and updated nfr dependancies
+# v1.5 - 11/05/2023 - Several bug fixes inclduing unix compliance file handing and updated nfr dependancies.
+# Credit @lapolis
+# v1.6 - 19/01/2024 - Panda and filetring implementation. Enhanced performance and output.
 # Credit @lapolis
 
 # STANDARDS
@@ -38,6 +41,7 @@ import nessus_file_reader as nfr
 # Globals hosts dictionary to lookup host information by report_host
 Hosts = {}
 root = ""
+severity_hierarchy = {'Critical': 4, 'High': 3, 'Medium': 2, 'Low': 1}
 
 # Functions
 def extractAll():
@@ -176,7 +180,7 @@ def extractCompliance():
                     compliance_id,compliance_name = compliance_desc.split(' ',1)
                 except Exception as e:
                     compliance_name = compliance_desc
-                    compliance_id = 'N.A'
+                    compliance_id = None
                     if args.verbose:
                         print (f'DEBUG - If this is not a Unix machine something is wrong! (compliance-check-name) -> {e}')
 
@@ -554,7 +558,7 @@ def extractMSPatches():
             if cve_list:
                 cve_text = '\n'.join(cve_list)
             else:
-                cve_text = 'NA'
+                cve_text = None
 
             if (plugin_family == "Windows : Microsoft Bulletins") and (plugin_name != "Microsoft Windows Summary of Missing Patches") and (plugin_name != "Microsoft Patch Bulletin Feasibility Check"):
                 output = nfr.plugin.plugin_output(root, report_host, plugin_id)
@@ -622,7 +626,7 @@ def extractLinuxPatches():
                 if cve_list:
                     cve_text = '\n'.join(cve_list)
                 else:
-                    cve_text = 'NA'
+                    cve_text = None
 
                 lines = plugin_output.splitlines()
                 installed_string = ["Remote package installed", "Remote version", "Installed package"]
@@ -742,25 +746,26 @@ def extractInstalledSoftware():
 def extractOutdatedSoftware():
     tic = time.perf_counter()
 
-    # Create worksheet with headers. Xlswriter doesn't support autofit so best guess for column widths
-    columns = []
-    columns.append(('Hostname',40))
-    columns.append(('IP Address',15))
-    columns.append(('Severity',10))
-    columns.append(('Issue',100))
-    columns.append(('Exploit Available',17))
-    columns.append(('CVE',17))
-    columns.append(('Installed Version',70))
-    columns.append(('Latest Version',55))
-    columns.append(('Path',100))
-    columns.append(('End of Support Date',20))
+    # Column names
+    columns = [ 'Hostname',
+                'IP Address',
+                'Severity',
+                'Issue',
+                'Exploit Available',
+                'CVE',
+                'Installed Version',
+                'Latest Version',
+                'Path',
+                'End of Support Date' ]
+    column_widths = [40, 15, 10, 100, 17, 17, 70, 55, 100, 20]
 
-    tableData = []
+    # Creating an empty DataFrame with these columns
+    df = pd.DataFrame(columns=columns)
 
-    # No queries to pull out just outdated software plugins. So will go through each one and look for "Installed version" 
+    # No queries to pull out just outdated software plugins. So will go through each one and look for "Installed version"
     for report_host in nfr.scan.report_hosts(root):
         all_plugins = nfr.host.report_items(report_host)
-        
+
         for plugin in all_plugins:
             # Remove all info and MS Patching issues
             risk_factor = nfr.plugin.report_item_value(plugin, 'risk_factor')
@@ -775,23 +780,25 @@ def extractOutdatedSoftware():
                 exploitability_ease = nfr.plugin.report_item_value(plugin, 'exploitability_ease')
                 cve_list = nfr.plugin.report_item_values(plugin, 'cve')
 
-                if exploitability_ease == 'No known exploits are available':
-                    exploit_exists = 'No'
-                elif exploitability_ease == 'Exploits are available':
-                    exploit_exists = 'Yes'
-                # this is when a software is EoL
-                elif exploitability_ease == None:
-                    exploit_exists = '-'
-                # leaving this one here for potential debugging
-                else:
-                    exploit_exists = '???'
-                
+
                 if cve_list:
                     cve_text = '\n'.join(cve_list)
                 else:
-                    cve_text = 'NA'
+                    cve_text = None
 
+                # resetting all variables
                 installed_version = None; latest_version = None; eol_date = None; installed_path = None
+
+                if exploitability_ease == 'No known exploits are available':
+                    exploit_exists = False
+                elif exploitability_ease == 'Exploits are available':
+                    exploit_exists = True
+                # this is when a software is EoL (marked in line + 13)
+                elif exploitability_ease is None:
+                    exploit_exists = False
+                # leaving this one here for potential debugging
+                else:
+                    exploit_exists = '???'
 
                 lines = plugin_output.splitlines()
                 for idx, line in enumerate(lines):
@@ -803,29 +810,55 @@ def extractOutdatedSoftware():
                         latest_version = latest_version[-1].strip()
                     if 'End of support' in line or 'Support ended' in line or 'EOL date' in line:
                         eol_date = line.split(':',1)
-                        eol_date = eol_date[-1].strip() 
+                        eol_date = eol_date[-1].strip()
                     if 'Path' in line or 'Filename' in line or 'Install Path' in line or 'URL' in line:
                         installed_path = line.split(':',1)
                         installed_path = installed_path[-1].strip()
+                        # When a SW is enumerated remotely (web for instance) there is no Path info
+                        installed_path = None if installed_path == '/' else installed_path
 
                     # Wait until we get to the last line of the plugin output before writing to Excel
                     if (idx == len(lines)-1) and (installed_version or latest_version or eol_date is not None):
-                        tableData.append((report_fqdn,report_ip,risk_factor,plugin_name,exploit_exists,cve_text,installed_version,latest_version,installed_path,eol_date))
-                        
-    if len(tableData) > 0:
-        OutdatedSoftwareWorksheet = CreateWorksheet(workbook,'Outdated Software')
-        CreateSheetTable(columns,OutdatedSoftwareWorksheet)
-        AddTableData(tableData,OutdatedSoftwareWorksheet)
-        
+                        if exploitability_ease is None and latest_version is None:
+                            latest_version = 'End of Life'
+                        row = [ report_fqdn,
+                                report_ip,
+                                risk_factor,
+                                plugin_name,
+                                exploit_exists,
+                                cve_text,
+                                installed_version,
+                                latest_version,
+                                installed_path,
+                                eol_date ]
+                        df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+
+    if not args.noclean:
+        df = df.drop_duplicates()
+
+        # define aggregation functions for each column
+        aggregations = {
+            'Hostname': lambda x: next((i for i in reversed(x.tolist()) if i), None),   # Keep the first non-empty
+            'Severity': lambda x: max(x, key=lambda s: severity_hierarchy[s]),          # Keep the highest severity
+            'Issue': lambda x: ''.join(i for i in x.unique() if i),                     # Keep unique if not None
+            'Exploit Available': lambda x: any(x),                                      # Logic gate OR
+            'CVE': lambda x: '\n'.join(i for i in x.unique() if i),                     # Join with \n if not None
+            'Latest Version': lambda x: ''.join(i for i in x.unique() if i),            # Keep unique if not None
+            'End of Support Date': lambda x: ''.join(i for i in x.unique() if i)        # Keep unique if not None
+        }
+        df = df.groupby(['IP Address', 'Installed Version', 'Path'], as_index=False).agg(aggregations)
+        df = df[columns]
+
+    # Writing the DataFrame
+    if not df.empty:
+        WriteDataFrame(df, 'Outdated Software', column_widths)
+        print("INFO - Please text wrap column F within the Outdated Software worksheet. Highlight column -> Home -> Wrap Text")
+        if args.noclean:
+            print(f'INFO - Use "Remove Duplicates" on the Outdated Software worksheet if required. Can be found within the Data ribbon in Excel')
+
     toc = time.perf_counter()
     if args.verbose:
-        print (f'DEBUG - Completed Outdated Software. {len(tableData)} rows took {toc - tic:0.4f} seconds')
-
-    if len(tableData) > 0:
-        print (f'INFO - Use "Remove Duplicates" on the Outdated Software worksheet if required. Can be found within the Data ribbon in Excel')
-    
-    if len(tableData) > 0:
-        print ("INFO - Please text wrap column F within the Outdated Software worksheet. Highlight column -> Home -> Wrap Text")
+        print(f'DEBUG - Completed Outdated Software. {len(df)} rows took {toc - tic:0.4f} seconds')
 
 # Identify all unencrypted protcols in use
 def extractUnencryptedProtocols():
@@ -1272,7 +1305,7 @@ def GenerateHostDictionary():
         
         if report_fqdn is None:
             # If we still haven't obtained hostname, use placeholder
-            report_fqdn = "N.A"
+            report_fqdn = None
 
         report_ip = nfr.host.resolved_ip(report_host)
         Hosts[report_ip] = report_fqdn
@@ -1290,20 +1323,29 @@ def GenerateHostDictionary():
 # Excel Functions - First create our Excel workbook
 def CreateWorkBook(workBookName):
     workbook = xlsxwriter.Workbook(workBookName)
-    
+
     if args.verbose:
         print(f'DEBUG - Using Excel output file: {workBookName}')
     
     return workbook
 
+
+def CreateExcelWriter(workBookName):
+    excel_writer = pd.ExcelWriter(args.out, engine='xlsxwriter')
+
+    if args.verbose:
+        print(f'DEBUG - Using Excel output file: {workBookName}')
+
+    return excel_writer
+
 # Create worksheet
-def CreateWorksheet(workBook, sheetName):
+def CreateWorksheet(workBook, sheetName): # TODO
     workSheet = workBook.add_worksheet(sheetName)
 
     return workSheet
 
 # Format worksheet
-def CreateSheetTable(columns,workSheet):
+def CreateSheetTable(columns,workSheet): # TODO
     col = 0
 
     for column in columns:
@@ -1315,7 +1357,7 @@ def CreateSheetTable(columns,workSheet):
     workSheet.autofilter('A1:'+alpha+'1000000')
 
 # Write data to worksheet
-def AddTableData(tableData,workSheet):
+def AddTableData(tableData,workSheet): # TODO
     row = 1
     col = 0
     for line in tableData:
@@ -1323,11 +1365,24 @@ def AddTableData(tableData,workSheet):
             workSheet.write(row,col,item)
             col += 1
         col = 0
-        row += 1 
+        row += 1
 
 # Finally gracefully clean up 
-def CloseWorkbook(workBook):
+def CloseWorkbook(workBook): # TODO
     workBook.close()
+
+def WriteDataFrame(dataframe, sheet_name, column_widths):
+    dataframe.to_excel(excelWriter, sheet_name=sheet_name, index=False, na_rep='N.A')
+
+    # Access the xlsxwriter workbook and worksheet objects
+    worksheet = excelWriter.sheets[sheet_name]
+
+    # Set the column widths
+    for i, width in enumerate(column_widths):
+        worksheet.set_column(i, i, width)
+
+def CloseExcelWriter(writer):
+    writer.close()
 
 # -------------------------------------------------------------------------------
 # Argparser to handle the usage / argument handling
@@ -1342,7 +1397,8 @@ parser.add_argument('--verbose', '-v', action='store_true', help='Increase outpu
 parser.add_argument('--out', '-o', required=False, help='Name of resulting Excel workbook. (Does not need extention, default name based on input file)')
 parser.add_argument('--quiet', '-q', action='store_true', help='Accept defaults during execution')
 parser.add_argument('--keyword', '-k', required=False, help='Extract all information relating to this word')
-parser.add_argument('--module', '-m', type=str, default='all', 
+parser.add_argument('--noclean', '-n', required=False, action='store_true', help='Do not remove duplicates and merge columns in outdatedsoftware')
+parser.add_argument('--module', '-m', type=str, default='all',
 help=textwrap.dedent('''Comma seperated list of what data you want to extract:
 all              = Default
 compliance       = Format CIS Compliance output
@@ -1407,6 +1463,7 @@ except IOError as e:
 
 # Create our Excel workbook
 workbook = CreateWorkBook(args.out)
+excelWriter = CreateExcelWriter(args.out)
 
 # Split out comma separated modules
 argvars = vars(parser.parse_args())
@@ -1510,5 +1567,6 @@ else:
 
 toc = time.perf_counter()
 print (f'COMPLETED! Output can be found in {os.getcwd()}{os.sep}{args.out} Total time taken: {toc - tic:0.4f} seconds')
-CloseWorkbook(workbook)
+CloseWorkbook(workbook) # TODO
+CloseExcelWriter(excelWriter)
 exit()
