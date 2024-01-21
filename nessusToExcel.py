@@ -4,8 +4,6 @@ from xml.etree.ElementTree import ParseError
 import nessus_file_reader as nfr
 import pandas as pd
 
-# DEVELOPING DO NOT USE
-
 # CHANGELOG
 # v0.1 - 26/01/2022 - Merged all modules into one file and created wrapper
 # v0.2 - 27/01/2022 - Tidied up a bit, added single plugin logic and removed dir argument as xlsxwriter does not support append
@@ -51,21 +49,21 @@ def extractAll():
     extractHosts()
     extractIssues()
     extractCompliance()
-    # extractDatabases()
-    # extractDefaultHTTP()
-    # extractHTTPServers()
-    # extractLastUpdated()
-    # extractMSPatches()
-    # extractLinuxPatches()
-    # extractOpenPorts()
-    # extractInstalledSoftware()
-    # extractOutdatedSoftware()
-    # extractUnencryptedProtocols()
-    # extractUnquotedServicePaths()
-    # extractUnsupportedOperatingSystems()
-    # extractWeakServicePermissions()
-    # extractWeakSSHAlgorithms()
-    # extractCredPatch()
+    extractDatabases()
+    extractDefaultHTTP()
+    extractHTTPServers()
+    extractLastUpdated()
+    extractMSPatches()
+    extractLinuxPatches()
+    extractOpenPorts()
+    extractInstalledSoftware()
+    extractOutdatedSoftware()
+    extractUnencryptedProtocols()
+    extractUnquotedServicePaths()
+    extractUnsupportedOperatingSystems()
+    extractWeakServicePermissions()
+    extractWeakSSHAlgorithms()
+    extractCredPatch()
 
 # Extract system information
 def extractHosts():
@@ -92,7 +90,7 @@ def extractHosts():
             print(f'{report_ip} {report_fqdn} {report_host_os}', file=txt_file)
 
             # Write to Excel worksheet
-            row = [ report_ip,report_fqdn,report_host_os ]
+            row = [report_ip,report_fqdn,report_host_os]
             df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
     
     txt_file.close()
@@ -101,7 +99,7 @@ def extractHosts():
         if not args.noclean:
             df = df.drop_duplicates()
         df = df.sort_values(by='IP Address')
-        WriteDataFrame(df, 'Outdated Software', column_widths)
+        WriteDataFrame(df, 'Host Information', column_widths)
 
     toc = time.perf_counter()
     if args.verbose:
@@ -193,7 +191,7 @@ def extractCompliance():
                     compliance_name = compliance_desc
                     compliance_id = None
                     if args.verbose:
-                        print (f'DEBUG - If this is not a Unix machine something is wrong! (compliance-check-name) -> {e}')
+                        print(f'DEBUG - If this is not a Unix machine something is wrong! (compliance-check-name) -> {e}')
 
                 # Write to Excel worksheet
                 row = [report_fqdn,
@@ -210,30 +208,30 @@ def extractCompliance():
 
     if not df.empty:
         # df = df.sort_values(by='IP Address')
-        WriteDataFrame(df, 'Compliance', column_widths)
+        WriteDataFrame(df, 'Compliance', column_widths, style='compliance')
         # saving the dataframe for the later styling
-        additional_style['compliance'] = df
+        # additional_style['compliance'] = df
         
     toc = time.perf_counter()
     if args.verbose:
         print(f'DEBUG - Completed Compliance. {len(df)} rows took {toc - tic:0.4f} seconds')
 
-# Provide database asset audit and include end of life dates. TODO - This module is taking significantly longer than the rest
+# Provide database asset audit and include end of life dates.
+# TODO: This module is taking significantly longer than the rest - could reduce code within if statements
 def extractDatabases():
     tic = time.perf_counter()
 
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
-    columns = []
-    columns.append(('Hostname',40))
-    columns.append(('IP Address',15))
-    columns.append(('Protocol',10))
-    columns.append(('Port',6))
-    columns.append(('Database Type',20))
-    columns.append(('Version',63))
-    columns.append(('MSSQL Instance Name',34))
-    columns.append(('End of Life Date',16))
-
-    tableData = []
+    columns = ['Hostname',
+               'IP Address',
+               'Protocol',
+               'Port',
+               'Database Type',
+               'Version',
+               'MSSQL Instance Name',
+               'End of Life Date']
+    column_widths = [40, 15, 10, 6, 20, 63, 34, 16]
+    df = pd.DataFrame(columns=columns)
 
     for report_host in nfr.scan.report_hosts(root):
         unauth_mssql_plugin = nfr.plugin.plugin_outputs(root, report_host, '10144')
@@ -284,7 +282,15 @@ def extractDatabases():
                     mssql_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
 
                     # Write to Excel worksheet
-                    row = [ report_fqdn,report_ip,mssql_protocol,mssql_port,"Microsoft SQL Server",mssql_version[-1].strip(),mssql_instance[-1].strip(),mssql_eol ]
+                    row = [report_fqdn,
+                           report_ip,
+                           mssql_protocol,
+                           mssql_port,
+                           "Microsoft SQL Server",
+                           mssql_version[-1].strip(),
+                           mssql_instance[-1].strip(),
+                           mssql_eol]
+                    df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
         # MySQL 
         if not re.match('[Cc]heck Audit Trail', mysql_plugin):
@@ -315,7 +321,15 @@ def extractDatabases():
                     mysql_port = nfr.plugin.report_item_value(report_item, 'port')
 
                     # Write to Excel worksheet
-                    row = [ report_fqdn,report_ip,mysql_protocol,mysql_port,"MySQL",mysql_version[-1].strip(),"",mysql_eol ]
+                    row = [report_fqdn,
+                           report_ip,
+                           mysql_protocol,
+                           mysql_port,
+                           "MySQL",
+                           mysql_version[-1].strip(),
+                           "",
+                           mysql_eol]
+                    df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
         # PostgreSQL - Doesn't present any info from an unauth perspective
         if not re.match('[Cc]heck Audit Trail', postgres_plugin):
@@ -332,7 +346,13 @@ def extractDatabases():
                     postgres_port = nfr.plugin.report_item_value(report_item, 'port')
 
                     # Write to Excel worksheet
-                    row = [ report_fqdn,report_ip,postgres_protocol,postgres_port,"PostgreSQL" ]
+                    row = [report_fqdn,
+                           report_ip,
+                           postgres_protocol,
+                           postgres_port,
+                           "PostgreSQL",
+                           "", "", ""]
+                    df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
         # Oracle
         if not re.match('[Cc]heck Audit Trail', oracle_plugin):
@@ -354,7 +374,14 @@ def extractDatabases():
                     oracle_port = nfr.plugin.report_item_value(report_item, 'port')
 
                     # Write to Excel worksheet
-                    row = [ report_fqdn,report_ip,oracle_protocol,oracle_port,"Oracle Database",oracle_version[-1].strip() ]
+                    row = [report_fqdn,
+                           report_ip,
+                           oracle_protocol,
+                           oracle_port,
+                           "Oracle Database",
+                           oracle_version[-1].strip(),
+                           "",""]
+                    df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
         # MongoDB
         if not re.match('[Cc]heck Audit Trail', mongo_plugin):
@@ -384,30 +411,38 @@ def extractDatabases():
                     mongo_port = nfr.plugin.report_item_value(report_item, 'port')
 
                     # Write to Excel worksheet
-                    row = [ report_fqdn,report_ip,mongo_protocol,mongo_port,"MongoDB",mongo_version[-1].strip(),"",mongo_eol ]
-    
-    if len(tableData) > 0:
-        DatabaseWorksheet = CreateWorksheet(workbook,'Databases')
-        CreateSheetTable(columns,DatabaseWorksheet)
-        AddTableData(tableData,DatabaseWorksheet)
+                    row = [report_fqdn,
+                           report_ip,
+                           mongo_protocol,
+                           mongo_port,
+                           "MongoDB",
+                           mongo_version[-1].strip(),
+                           "",
+                           mongo_eol]
+                    df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+
+    # Writing and cleaning the DataFrame
+    if not df.empty:
+        if not args.noclean:
+            df = df.drop_duplicates()
+        WriteDataFrame(df, 'Databases', column_widths)
 
     toc = time.perf_counter()
     if args.verbose:
-        print (f'DEBUG - Completed Database Audit. {len(tableData)} rows took {toc - tic:0.4f} seconds')
+        print(f'DEBUG - Completed Database Audit. {len(df)} rows took {toc - tic:0.4f} seconds')
 
 # Extract all Default HTTP instances
 def extractDefaultHTTP():
     tic = time.perf_counter()
 
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
-    columns = []
-    columns.append(('Hostname',40))
-    columns.append(('IP Address',15))
-    columns.append(('Protocol',10))
-    columns.append(('Port',6))
-    columns.append(('HTTP Content',60))
-
-    tableData = []
+    columns = ['Hostname',
+               'IP Address',
+               'Protocol',
+               'Port',
+               'HTTP Content']
+    column_widths = [40, 15, 10, 6, 60]
+    df = pd.DataFrame(columns=columns)
 
     for report_host in nfr.scan.report_hosts(root):
         plugin_11422 = nfr.plugin.plugin_outputs(root, report_host, '11422')
@@ -427,30 +462,35 @@ def extractDefaultHTTP():
                 http_port = nfr.plugin.report_item_value(report_item, 'port')
 
                 # Write to Excel worksheet
-                row = [ report_fqdn,report_ip,http_protocol,http_port,lines[1] ]
-    
-    if len(tableData) > 0:
-        DefaultHTTPWorksheet = CreateWorksheet(workbook,'Default HTTP Servers')
-        CreateSheetTable(columns,DefaultHTTPWorksheet)
-        AddTableData(tableData,DefaultHTTPWorksheet)
+                row = [report_fqdn,
+                       report_ip,
+                       http_protocol,
+                       http_port,
+                       lines[1]]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+
+    # Writing the DataFrame
+    if not df.empty:
+        if not args.noclean:
+            df = df.drop_duplicates()
+        WriteDataFrame(df, 'Default HTTP Servers', column_widths)
 
     toc = time.perf_counter()
     if args.verbose:
-        print (f'DEBUG - Completed Default HTTP Servers. {len(tableData)} rows took {toc - tic:0.4f} seconds')
+        print(f'DEBUG - Completed Default HTTP Servers. {len(df)} rows took {toc - tic:0.4f} seconds')
 
 # Extract all HTTP(S) servers and their headers
 def extractHTTPServers():
     tic = time.perf_counter()
 
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
-    columns = []
-    columns.append(('Hostname',40))
-    columns.append(('IP Address',15))
-    columns.append(('Protocol',10))
-    columns.append(('Port',6))
-    columns.append(('HTTP Server',60))
-
-    tableData = []
+    columns = ['Hostname',
+               'IP Address',
+               'Protocol',
+               'Port',
+               'HTTP Server']
+    column_widths = [40, 15, 10, 6, 60]
+    df = pd.DataFrame(columns=columns)
 
     for report_host in nfr.scan.report_hosts(root):
         plugin_10107 = nfr.plugin.plugin_outputs(root, report_host, '10107')
@@ -471,30 +511,35 @@ def extractHTTPServers():
 
                 # Write to Excel worksheet if not WinRM / SCCM HTTP ports
                 if (http_port != "5985") and (http_port != "8005")  and (http_port != "47001"):
-                    row = [ report_fqdn,report_ip,http_protocol,http_port,lines[2] ]
-    
-    if len(tableData) > 0:
-        HTTPServerWorksheet = CreateWorksheet(workbook,'HTTP Servers')
-        CreateSheetTable(columns,HTTPServerWorksheet)
-        AddTableData(tableData,HTTPServerWorksheet)
+                    row = [report_fqdn,
+                           report_ip,
+                           http_protocol,
+                           http_port,
+                           lines[2]]
+                    df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+
+    # Writing the DataFrame
+    if not df.empty:
+        if not args.noclean:
+            df = df.drop_duplicates()
+        WriteDataFrame(df, 'HTTP Servers', column_widths)
 
     toc = time.perf_counter()
     if args.verbose:
-        print (f'DEBUG - Completed HTTP Servers. {len(tableData)} rows took {toc - tic:0.4f} seconds')
+        print(f'DEBUG - Completed HTTP Servers. {len(df)} rows took {toc - tic:0.4f} seconds')
 
 # Windows security patch audit
 def extractLastUpdated():
     tic = time.perf_counter()
 
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
-    columns = []
-    columns.append(('Hostname',40))
-    columns.append(('IP Address',15))
-    columns.append(('Latest Effective Update Level',28))
-    columns.append(('Patch',28))
-    columns.append(('Installed on',28))
-
-    tableData = []
+    columns = ['Hostname',
+               'IP Address',
+               'Latest Effective Update Level',
+               'Patch',
+               'Installed on']
+    column_widths = [40, 15, 28, 28, 28]
+    df = pd.DataFrame(columns=columns)
 
     for report_host in nfr.scan.report_hosts(root):
         # Microsoft Security Rollup Enumeration
@@ -511,7 +556,7 @@ def extractLastUpdated():
                     update_level = line.replace(' Latest effective update level : ','')
 
             # Write to Excel worksheet
-            row = [ report_fqdn,report_ip,update_level.replace('_','/') ]
+            row = [report_fqdn,report_ip,update_level.replace('_','/')]
 
         # SMB Quick Fix Engineering patch output
         plugin_62042 = nfr.plugin.plugin_outputs(root, report_host, '62042')
@@ -528,37 +573,42 @@ def extractLastUpdated():
                     date = patch_date[-1].split()
                         
                     # Write to Excel worksheet
-                    row = [ report_fqdn,report_ip,"",patch,date[-1] ]
-                
-    if len(tableData) > 0:
-        IssuesWorksheet = CreateWorksheet(workbook,'Security Update Level')
-        CreateSheetTable(columns,IssuesWorksheet)
-        AddTableData(tableData,IssuesWorksheet)
+                    row = [report_fqdn,
+                           report_ip,
+                           "",
+                           patch,
+                           date[-1]]
+                    df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+
+    # Writing the DataFrame
+    if not df.empty:
+        if not args.noclean:
+            df = df.drop_duplicates()
+        WriteDataFrame(df, 'Security Update Level', column_widths)
 
     toc = time.perf_counter()
     if args.verbose:
-        print (f'DEBUG - Completed Security Patch Levels. {len(tableData)} rows took {toc - tic:0.4f} seconds')
+        print(f'DEBUG - Completed Security Patch Levels. {len(df)} rows took {toc - tic:0.4f} seconds')
 
 # Extract all missing Windows security patches
 def extractMSPatches():
     tic = time.perf_counter()
 
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
-    columns = []
-    columns.append(('Hostname',40))
-    columns.append(('IP Address',15))
-    columns.append(('Severity',10))
-    columns.append(('Missing Security Patch',110))
-    columns.append(('Exploit Available',17))
-    columns.append(('CVE',17))
-    columns.append(('Additional Information',180))
-
-    tableData = []
+    columns = ['Hostname',
+               'IP Address',
+               'Severity',
+               'Missing Security Patch',
+               'Exploit Available',
+               'CVE',
+               'Additional Information']
+    column_widths = [40, 15, 10, 110, 17, 17, 180]
+    df = pd.DataFrame(columns=columns)
 
     # Will need to assess each plugin for its family
     for report_host in nfr.scan.report_hosts(root):
         all_plugins = nfr.host.report_items(report_host)
-        
+
         for plugin in all_plugins:
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
@@ -576,7 +626,7 @@ def extractMSPatches():
             else:
                 # leaving this one here for potential debugging
                 exploit_exists = '???'
-            
+
             if cve_list:
                 cve_text = '\n'.join(cve_list)
             else:
@@ -584,45 +634,57 @@ def extractMSPatches():
 
             if (plugin_family == "Windows : Microsoft Bulletins") and (plugin_name != "Microsoft Windows Summary of Missing Patches") and (plugin_name != "Microsoft Patch Bulletin Feasibility Check"):
                 output = nfr.plugin.plugin_output(root, report_host, plugin_id)
-                row = [ report_fqdn,report_ip,risk_factor,plugin_name,exploit_exists,cve_text,output.strip() ]
+                row = [report_fqdn,
+                       report_ip,
+                       risk_factor,
+                       plugin_name,
+                       exploit_exists,
+                       cve_text,
+                       output.strip()]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
             elif (plugin_family == "Windows") and (plugin_name.startswith('Security Updates for ')):
                 output = nfr.plugin.plugin_output(root, report_host, plugin_id)
-                row = [ report_fqdn,report_ip,risk_factor,plugin_name,exploit_exists,cve_text,output.strip() ]
-           
-    if len(tableData) > 0:
-        MSPatchesWorksheet = CreateWorksheet(workbook,'Missing Microsoft Patches')
-        CreateSheetTable(columns,MSPatchesWorksheet)
-        AddTableData(tableData,MSPatchesWorksheet)
+                row = [report_fqdn,
+                       report_ip,
+                       risk_factor,
+                       plugin_name,
+                       exploit_exists,
+                       cve_text,
+                       output.strip()]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+
+    # Writing the DataFrame
+    if not df.empty:
+        if not args.noclean:
+            df = df.drop_duplicates()
+        WriteDataFrame(df, 'Missing Microsoft Patches', column_widths)
+        print("INFO - Please text wrap column F and G within the Missing Microsoft Patches worksheet. Highlight column -> Home -> Wrap Text")
 
     toc = time.perf_counter()
     if args.verbose:
-        print (f'DEBUG - Completed Microsoft Patches. {len(tableData)} rows took {toc - tic:0.4f} seconds')
-
-    if len(tableData) > 0:
-        print ("INFO - Please text wrap column F and G within the Missing Microsoft Patches worksheet. Highlight column -> Home -> Wrap Text")
+        print(f'DEBUG - Completed Microsoft Patches. {len(df)} rows took {toc - tic:0.4f} seconds')
 
 # Extract all missing Linux security patches
 def extractLinuxPatches():
     tic = time.perf_counter()
 
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
-    columns = []
-    columns.append(('Hostname',40))
-    columns.append(('IP Address',15))
-    columns.append(('Severity',10))
-    columns.append(('Missing patch',67))
-    columns.append(('Current Package Version',50))
-    columns.append(('Latest Package Version',50))
-    columns.append(('Exploit Available',17))
-    columns.append(('CVE',17))
-
-    tableData = []
+    columns = ['Hostname',
+               'IP Address',
+               'Severity',
+               'Missing patch',
+               'Current Package Version',
+               'Latest Package Version',
+               'Exploit Available',
+               'CVE']
+    column_widths = [40, 15, 10, 67, 50, 50, 17, 17]
+    df = pd.DataFrame(columns=columns)
 
     # Local security check family misses outdated MySQL rpms among others query every output for "remote package"
     for report_host in nfr.scan.report_hosts(root):
         all_plugins = nfr.host.report_items(report_host)
-        
+
         for plugin in all_plugins:
             # Remove all info and MS Patching issues
             risk_factor = nfr.plugin.report_item_value(plugin, 'risk_factor')
@@ -644,7 +706,7 @@ def extractLinuxPatches():
                 else:
                     # leaving this one here for potential debugging
                     exploit_exists = '???'
-                
+
                 if cve_list:
                     cve_text = '\n'.join(cve_list)
                 else:
@@ -658,32 +720,38 @@ def extractLinuxPatches():
                         currentver = line.split(":",1)
                     if any(in_str in line for in_str in updated_string):
                         latestver = line.split(":",1)
-                        row = [ report_fqdn,report_ip,risk_factor,plugin_name,currentver[-1].strip(),latestver[-1].strip(),exploit_exists,cve_text ]
+                        row = [report_fqdn,
+                               report_ip,
+                               risk_factor,
+                               plugin_name,
+                               currentver[-1].strip(),
+                               latestver[-1].strip(),
+                               exploit_exists,
+                               cve_text]
+                        df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
-    if len(tableData) > 0:
-        LinuxPatchesWorksheet = CreateWorksheet(workbook,'Missing Linux Patches')
-        CreateSheetTable(columns,LinuxPatchesWorksheet)
-        AddTableData(tableData,LinuxPatchesWorksheet)
+    # Writing the DataFrame
+    if not df.empty:
+        if not args.noclean:
+            df = df.drop_duplicates()
+        WriteDataFrame(df, 'Missing Linux Patches', column_widths)
+        print("INFO - Please text wrap column H within the Missing Linux Patches worksheet. Highlight column -> Home -> Wrap Text")
 
     toc = time.perf_counter()
     if args.verbose:
-        print (f'DEBUG - Completed Linux Patches. {len(tableData)} rows took {toc - tic:0.4f} seconds')
-
-    if len(tableData) > 0:
-        print ("INFO - Please text wrap column H within the Missing Linux Patches worksheet. Highlight column -> Home -> Wrap Text")
+        print(f'DEBUG - Completed Linux Patches. {len(df)} rows took {toc - tic:0.4f} seconds')
 
 # Extract all open ports
 def extractOpenPorts():
     tic = time.perf_counter()
 
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
-    columns = []
-    columns.append(('Hostname',40))
-    columns.append(('IP Address',15))
-    columns.append(('Protocol',10))
-    columns.append(('Port',6))
-
-    tableData = []
+    columns = ['Hostname',
+               'IP Address',
+               'Protocol',
+               'Port']
+    column_widths = [40, 15, 10, 6]
+    df = pd.DataFrame(columns=columns)
 
     for report_host in nfr.scan.report_hosts(root):
         report_ip = nfr.host.resolved_ip(report_host)
@@ -701,28 +769,32 @@ def extractOpenPorts():
 
                 if (port != "0"):
                     # Write to Excel worksheet
-                    row = [ report_fqdn,report_ip,protocol,port ]
+                    row = [report_fqdn,
+                           report_ip,
+                           protocol,
+                           port]
+                    df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
-    if len(tableData) > 0:
-        OpenPortsWorksheet = CreateWorksheet(workbook,'Open Ports')
-        CreateSheetTable(columns,OpenPortsWorksheet)
-        AddTableData(tableData,OpenPortsWorksheet)
-    
+    # Writing the DataFrame
+    if not df.empty:
+        if not args.noclean:
+            df = df.drop_duplicates()
+        WriteDataFrame(df, 'Open Ports', column_widths)
+
     toc = time.perf_counter()
     if args.verbose:
-        print (f'DEBUG - Completed Open Ports. {len(tableData)} rows took {toc - tic:0.4f} seconds')
+        print(f'DEBUG - Completed Open Ports. {len(df)} rows took {toc - tic:0.4f} seconds')
 
 # Perform software audit on all Windows machines
 def extractInstalledSoftware():
     tic = time.perf_counter()
 
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
-    columns = []
-    columns.append(('Hostname',40))
-    columns.append(('IP Address',15))
-    columns.append(('Installed Software',100))
-
-    tableData = []
+    columns = ['Hostname',
+               'IP Address',
+               'Installed Software']
+    column_widths = [40, 15, 100]
+    df = pd.DataFrame(columns=columns)
 
     for report_host in nfr.scan.report_hosts(root):
         report_ip = nfr.host.resolved_ip(report_host)
@@ -740,7 +812,7 @@ def extractInstalledSoftware():
                     pass
                 else:
                     # Write to Excel worksheet
-                    row = [ report_fqdn,report_ip,line.strip() ]
+                    row = [report_fqdn,report_ip,line.strip()]
         
         # Linux (rpm -qa etc.)
         plugin_22869 = nfr.plugin.plugin_output(root, report_host, '22869')
@@ -753,16 +825,20 @@ def extractInstalledSoftware():
                     pass
                 else:
                     # Write to Excel worksheet
-                    row = [ report_fqdn,report_ip,line.strip() ]
-    
-    if len(tableData) > 0:
-        InstalledSoftwareWorksheet = CreateWorksheet(workbook,'Installed Third Party Software')
-        CreateSheetTable(columns,InstalledSoftwareWorksheet)
-        AddTableData(tableData,InstalledSoftwareWorksheet)
+                    row = [report_fqdn,
+                           report_ip,
+                           line.strip()]
+                    df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+
+    # Writing the DataFrame
+    if not df.empty:
+        if not args.noclean:
+            df = df.drop_duplicates()
+        WriteDataFrame(df, 'Installed Third Party Software', column_widths)
 
     toc = time.perf_counter()
     if args.verbose:
-        print (f'DEBUG - Completed Installed Third Party Software. {len(tableData)} rows took {toc - tic:0.4f} seconds')
+        print(f'DEBUG - Completed Installed Third Party Software. {len(df)} rows took {toc - tic:0.4f} seconds')
 
 # Extract all outdated software
 def extractOutdatedSoftware():
@@ -801,7 +877,6 @@ def extractOutdatedSoftware():
                 plugin_output = nfr.plugin.plugin_outputs(root, report_host, plugin_id)
                 exploitability_ease = nfr.plugin.report_item_value(plugin, 'exploitability_ease')
                 cve_list = nfr.plugin.report_item_values(plugin, 'cve')
-
 
                 if cve_list:
                     cve_text = '\n'.join(cve_list)
@@ -843,16 +918,16 @@ def extractOutdatedSoftware():
                     if (idx == len(lines)-1) and (installed_version or latest_version or eol_date is not None):
                         if exploitability_ease is None and latest_version is None:
                             latest_version = 'End of Life'
-                        row = [ report_fqdn,
-                                report_ip,
-                                risk_factor,
-                                plugin_name,
-                                exploit_exists,
-                                cve_text,
-                                installed_version,
-                                latest_version,
-                                installed_path,
-                                eol_date ]
+                        row = [report_fqdn,
+                               report_ip,
+                               risk_factor,
+                               plugin_name,
+                               exploit_exists,
+                               cve_text,
+                               installed_version,
+                               latest_version,
+                               installed_path,
+                               eol_date]
                         df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
     if not df.empty:
@@ -862,6 +937,7 @@ def extractOutdatedSoftware():
             df = df.drop_duplicates()
 
             # define aggregation functions for each column
+            # TODO: define a function for the repeated methods
             aggregations = {
                 'Hostname': lambda x: next((i for i in reversed(x.tolist()) if i), None),   # Keep the first non-empty
                 'Severity': lambda x: max(x, key=lambda s: severity_hierarchy[s]),          # Keep the highest severity
@@ -875,6 +951,7 @@ def extractOutdatedSoftware():
             df = df[columns]
 
         # Writing the DataFrame
+        # TODO: do some styling for the Severity column?
         WriteDataFrame(df, 'Outdated Software', column_widths)
         print("INFO - Please text wrap column F within the Outdated Software worksheet. Highlight column -> Home -> Wrap Text")
         if args.noclean:
@@ -889,14 +966,13 @@ def extractUnencryptedProtocols():
     tic = time.perf_counter()
 
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
-    columns = []
-    columns.append(('Hostname',40))
-    columns.append(('IP Address',15))
-    columns.append(('Protocol',10))
-    columns.append(('Port',6))
-    columns.append(('Description',50))
-
-    tableData = []
+    columns = ['Hostname',
+               'IP Address',
+               'Protocol',
+               'Port',
+               'Description']
+    column_widths = [40, 15, 10, 6, 50]
+    df = pd.DataFrame(columns=columns)
 
     for report_host in nfr.scan.report_hosts(root):
         report_ip = nfr.host.resolved_ip(report_host)
@@ -914,30 +990,35 @@ def extractUnencryptedProtocols():
                 unencrypted_description = nfr.plugin.report_item_value(report_item, 'plugin_name')
 
                 # Write to Excel worksheet
-                row = [ report_fqdn,report_ip,unencrypted_protocol,unencrypted_port,unencrypted_description ]
+                row = [report_fqdn,
+                       report_ip,
+                       unencrypted_protocol,
+                       unencrypted_port,
+                       unencrypted_description]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
-    if len(tableData) > 0:
-        UnencryptedProtocolsWorksheet = CreateWorksheet(workbook,'Unencrypted Protocols')
-        CreateSheetTable(columns,UnencryptedProtocolsWorksheet)
-        AddTableData(tableData,UnencryptedProtocolsWorksheet)
+    # Writing the DataFrame
+    if not df.empty:
+        if not args.noclean:
+            df = df.drop_duplicates()
+        WriteDataFrame(df, 'Unencrypted Protocols', column_widths)
     
     toc = time.perf_counter()
     if args.verbose:
-        print (f'DEBUG - Completed Unencrypted Protocols. {len(tableData)} rows took {toc - tic:0.4f} seconds')
+        print(f'DEBUG - Completed Unencrypted Protocols. {len(df)} rows took {toc - tic:0.4f} seconds')
 
 # Extract all unquoted service paths along with their service name
 def extractUnquotedServicePaths():
     tic = time.perf_counter()
 
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
-    columns = []
-    columns.append(('Hostname',40))
-    columns.append(('IP Address',15))
-    columns.append(('Service Name',40))
-    columns.append(('Service Path',100))
-    columns.append(('Exploitability',14))
-
-    tableData = []
+    columns = ['Hostname',
+               'IP Address',
+               'Service Name',
+               'Service Path',
+               'Exploitability']
+    column_widths = [40, 15, 40, 100, 14]
+    df = pd.DataFrame(columns=columns)
 
     for report_host in nfr.scan.report_hosts(root):
                 
@@ -954,100 +1035,133 @@ def extractUnquotedServicePaths():
                     service,path = line.split(':',1)
                     # Write to Excel worksheet
                     if "C:\Program Files".lower() in path.lower():
-                        row = [ report_fqdn,report_ip,service.strip(),path.strip(),'Low' ]
+                        exploitability = 'Low'
                     else:
-                        row = [ report_fqdn,report_ip,service.strip(),path.strip(),'High' ]
-    
-    if len(tableData) > 0:
-        UnquotedPathsWorksheet = CreateWorksheet(workbook,'Unquoted Service Paths')
-        CreateSheetTable(columns,UnquotedPathsWorksheet)
-        AddTableData(tableData,UnquotedPathsWorksheet)
+                        exploitability = 'High'
+                    row = [report_fqdn,
+                           report_ip,
+                           service.strip(),
+                           path.strip(),
+                           exploitability]
+                    df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+
+    # Writing the DataFrame
+    if not df.empty:
+        if not args.noclean:
+            df = df.drop_duplicates()
+        WriteDataFrame(df, 'Unquoted Service Paths', column_widths)
 
     toc = time.perf_counter()
     if args.verbose:
-        print (f'DEBUG - Completed Unquoted Service Paths. {len(tableData)} rows took {toc - tic:0.4f} seconds')
+        print(f'DEBUG - Completed Unquoted Service Paths. {len(df)} rows took {toc - tic:0.4f} seconds')
 
 # Identify all unsupported operating systems 
 def extractUnsupportedOperatingSystems():
     tic = time.perf_counter()
 
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
-    columns = []
-    columns.append(('Hostname',40))
-    columns.append(('IP Address',15))
-    columns.append(('Operating System',55))
-    columns.append(('End of Mainstream Support Date',31))
-    columns.append(('End of Extended Support Date',29))
-    columns.append(('End of Extended Security Updates (ESU / ESM) Date',50))
-
-    tableData = []
+    columns = ['Hostname',
+               'IP Address',
+               'Operating System',
+               'End of Mainstream Support Date',
+               'End of Extended Support Date',
+               'End of Extended Security Updates (ESU / ESM) Date']
+    column_widths = [40, 15, 55, 31, 29, 50]
+    df = pd.DataFrame(columns=columns)
 
     for report_host in nfr.scan.report_hosts(root):
         report_ip = nfr.host.resolved_ip(report_host)
         report_fqdn = Hosts[report_ip]
         report_host_os = nfr.host.detected_os(report_host)
 
+        # TODO: check if this can land on more than one if
+        # if not, convert to elif and a single pd.concat at the end
         if report_host_os is not None and report_host_os.count('\n') == 0:
             # https://docs.microsoft.com/en-gb/lifecycle/products/
             if 'Microsoft Windows 2000' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"30 June 2005","13 July 2010","" ]
+                row = [report_fqdn,report_ip,report_host_os,"30 June 2005","13 July 2010",""]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if 'Microsoft Windows Server 2003' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"13 July 2010","14 July 2015","" ]
+                row = [report_fqdn,report_ip,report_host_os,"13 July 2010","14 July 2015",""]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if 'Microsoft Windows Server 2008' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"13 January 2015","14 January 2020","10 January 2023" ]
+                row = [report_fqdn,report_ip,report_host_os,"13 January 2015","14 January 2020","10 January 2023"]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if 'Microsoft Windows Server 2012' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"09 October 2018","10 October 2023","13 October 2026" ]
+                row = [report_fqdn,report_ip,report_host_os,"09 October 2018","10 October 2023","13 October 2026"]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if 'Microsoft Windows XP' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"14 April 2009","08 April 2014","" ]
+                row = [report_fqdn,report_ip,report_host_os,"14 April 2009","08 April 2014",""]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if 'Microsoft Windows Vista' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"10 April 2012","11 April 2017","" ]
+                row = [report_fqdn,report_ip,report_host_os,"10 April 2012","11 April 2017",""]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if 'Microsoft Windows 7' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"13 January 2015","14 January 2020","10 January 2023" ]
+                row = [report_fqdn,report_ip,report_host_os,"13 January 2015","14 January 2020","10 January 2023"]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if 'Microsoft Windows 8' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"","12 January 2016","" ]
-        # https://endoflife.date/   https://endoflife.software/
+                row = [report_fqdn,report_ip,report_host_os,"","12 January 2016",""]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+            # https://endoflife.date/   https://endoflife.software/
             if 'VMware ESXi 5.5' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"19 September 2015","19 September 2020","" ]
+                row = [report_fqdn,report_ip,report_host_os,"19 September 2015","19 September 2020",""]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if 'VMware ESXi 6.0' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"12 March 2018","12 March 2022","" ]
+                row = [report_fqdn,report_ip,report_host_os,"12 March 2018","12 March 2022",""]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if 'Ubuntu 10.04' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"30 April 2015","","" ]
+                row = [report_fqdn,report_ip,report_host_os,"30 April 2015","",""]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if 'Ubuntu 12.04' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"28 April 2017","","" ]
+                row = [report_fqdn,report_ip,report_host_os,"28 April 2017","",""]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if 'Ubuntu 14.04' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"02 April 2019","","02 April 2024" ]
+                row = [report_fqdn,report_ip,report_host_os,"02 April 2019","","02 April 2024"]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if 'Ubuntu 16.04' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"02 April 2021","","02 April 2026" ]
+                row = [report_fqdn,report_ip,report_host_os,"02 April 2021","","02 April 2026"]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if 'CentOS Linux 5' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"31 March 2017","","" ]
+                row = [report_fqdn,report_ip,report_host_os,"31 March 2017","",""]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if 'CentOS Linux release 6' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"10 May 2017","30 November 2020","" ]
+                row = [report_fqdn,report_ip,report_host_os,"10 May 2017","30 November 2020",""]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if 'CentOS Linux 8' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"31 December 2021","","" ]
+                row = [report_fqdn,report_ip,report_host_os,"31 December 2021","",""]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if 'Debian 6' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"31 May 2015","29 February 2016","" ]
+                row = [report_fqdn,report_ip,report_host_os,"31 May 2015","29 February 2016",""]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if 'Debian 7' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"26 April 2016","01 May 2018","31 December 2019" ]
+                row = [report_fqdn,report_ip,report_host_os,"26 April 2016","01 May 2018","31 December 2019"]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if 'Debian 8' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"17 June 2018","30 June 2020","30 June 2022" ]
+                row = [report_fqdn,report_ip,report_host_os,"17 June 2018","30 June 2020","30 June 2022"]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if 'Debian 9' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"01 January 2020","30 June 2022","" ]
-        # https://www.freebsd.org/security/unsupported/
+                row = [report_fqdn,report_ip,report_host_os,"01 January 2020","30 June 2022",""]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+            # https://www.freebsd.org/security/unsupported/
             if 'FreeBSD 9.' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"31 December 2016","","" ]
+                row = [report_fqdn,report_ip,report_host_os,"31 December 2016","",""]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if 'FreeBSD 10.' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"31 October 2018","","" ]
+                row = [report_fqdn,report_ip,report_host_os,"31 October 2018","",""]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
             if 'FreeBSD 11.' in report_host_os:
-                row = [ report_fqdn,report_ip,report_host_os,"30 September 2021","","" ]
+                row = [report_fqdn,report_ip,report_host_os,"30 September 2021","",""]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
-    if len(tableData) > 0:
-        UnsupportedOSWorksheet = CreateWorksheet(workbook,'Unsupported Operating Systems')
-        CreateSheetTable(columns,UnsupportedOSWorksheet)
-        AddTableData(tableData,UnsupportedOSWorksheet)
+    # Writing the DataFrame
+    if not df.empty:
+        if not args.noclean:
+            df = df.drop_duplicates()
+        WriteDataFrame(df, 'Unsupported Operating Systems', column_widths)
 
     toc = time.perf_counter()
     if args.verbose:
-        print (f'DEBUG - Completed Unsupported Operating Systems. {len(tableData)} rows took {toc - tic:0.4f} seconds')
+        print(f'DEBUG - Completed Unsupported Operating Systems. {len(df)} rows took {toc - tic:0.4f} seconds')
 
 # Identify all Windows services with weak permissions
 def extractWeakServicePermissions():
@@ -1055,15 +1169,14 @@ def extractWeakServicePermissions():
     path = services = dirGroups = writeGroups = ''
 
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column width
-    columns = []
-    columns.append(('Hostname',40))
-    columns.append(('IP Address',15))
-    columns.append(('Service Name',50))
-    columns.append(('Service Path',85))
-    columns.append(('User / Group with Write permissions',35))
-    columns.append(('User / Group with Full Control',30))
-
-    tableData = []
+    columns = ['Hostname',
+               'IP Address',
+               'Service Name',
+               'Service Path',
+               'User / Group with Write permissions',
+               'User / Group with Full Control']
+    column_widths = [40, 15, 50, 85, 35, 30]
+    df = pd.DataFrame(columns=columns)
 
     for report_host in nfr.scan.report_hosts(root):
         report_ip = nfr.host.resolved_ip(report_host)
@@ -1088,34 +1201,42 @@ def extractWeakServicePermissions():
                     if 'Full control of directory' in line:
                         writeGroups= line.replace('Full control of directory allowed for groups : ','')
 
-                # Write to Excel worksheet
-                row = [ report_fqdn,report_ip,services,path,dirGroups,writeGroups ]
-    
-    if len(tableData) > 0:
-        ServicePermissionsWorksheet = CreateWorksheet(workbook,'Insecure Service Permissions')
-        CreateSheetTable(columns,ServicePermissionsWorksheet)
-        AddTableData(tableData,ServicePermissionsWorksheet)
+                # TODO: this produces empty columns - find out why and fix (migth be done with that if)
+                if services and path:
+                    # Write to Excel worksheet
+                    row = [report_fqdn,
+                           report_ip,
+                           services,
+                           path,
+                           dirGroups,
+                           writeGroups]
+                    df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+
+    # Writing the DataFrame
+    if not df.empty:
+        if not args.noclean:
+            df = df.drop_duplicates()
+        WriteDataFrame(df, 'Insecure Service Permissions', column_widths)
 
     toc = time.perf_counter()
     if args.verbose:
-        print (f'DEBUG - Completed Weak Service Permissions. {len(tableData)} rows took {toc - tic:0.4f} seconds')
+        print(f'DEBUG - Completed Weak Service Permissions. {len(df)} rows took {toc - tic:0.4f} seconds')
 
 # Extract all Weak Algorithms and Ciphers being used by SSH services
 def extractWeakSSHAlgorithms():
     tic = time.perf_counter()
 
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
-    columns = []
-    columns.append(('Hostname',40))
-    columns.append(('IP Address',15))
-    columns.append(('Protocol',10))
-    columns.append(('Port',6))
-    columns.append(('Weak Encryption Algorithm',27))
-    columns.append(('Weak Key Exchange Algorithm',33))
-    columns.append(('Weak Cipher Block Chaining Cipher',33))
-    columns.append(('Weak Message Authentication Code Algorithm',44))
-    
-    tableData = []
+    columns = ['Hostname',
+               'IP Address',
+               'Protocol',
+               'Port',
+               'Weak Encryption Algorithm',
+               'Weak Key Exchange Algorithm',
+               'Weak Cipher Block Chaining Cipher',
+               'Weak Message Authentication Code Algorithm']
+    column_widths = [40, 15, 10, 6, 27, 33, 33, 44]
+    df = pd.DataFrame(columns=columns)
     
     for report_host in nfr.scan.report_hosts(root):
         # Initialize some variables
@@ -1197,30 +1318,39 @@ def extractWeakSSHAlgorithms():
                 if enc == "" and kek == "" and cbc == "" and mac == "":
                     ipComplete = True
                 else:
-                    row = [ report_fqdn,report_ip,ssh_protocol,ssh_port,enc,kek,cbc,mac ]
+                    row = [report_fqdn,
+                           report_ip,
+                           ssh_protocol,
+                           ssh_port,
+                           enc, kek,
+                           cbc, mac]
+                    df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
                     r += 1
 
-    if len(tableData) > 0:
-        WeakSSHWorksheet = CreateWorksheet(workbook,'Weak SSH Algorithms')
-        CreateSheetTable(columns,WeakSSHWorksheet)
-        AddTableData(tableData,WeakSSHWorksheet)
+    # Writing the DataFrame
+    # TODO: this could also be enhanced with ssh-audit list ?
+    if not df.empty:
+        if not args.noclean:
+            df = df.drop_duplicates()
+        WriteDataFrame(df, 'Weak SSH Algorithms', column_widths)
+        print(f'INFO - Please text wrap columns E,F,G,H within the Weak SSH Algorithms worksheet. Highlight column -> Home -> Wrap Text')
 
     toc = time.perf_counter()
     if args.verbose:
-        print (f'DEBUG - Completed Weak SSH Algorithms and Ciphers. {len(tableData)} rows took {toc - tic:0.4f} seconds')
+        print(f'DEBUG - Completed Weak SSH Algorithms and Ciphers. {len(df)} rows took {toc - tic:0.4f} seconds')
 
 # Extract list of hosts in which Cred Patch was Possible/Successful
 def extractCredPatch():
     tic = time.perf_counter()
 
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
-    columns = []
-    columns.append(('Hostname',40))
-    columns.append(('IP Address',15))
-    columns.append(('Operating System',60))
-    columns.append(('Plugin',15))
+    columns = ['Hostname',
+               'IP Address',
+               'Operating System',
+               'Plugin']
+    column_widths = [40, 15, 60, 15]
+    df = pd.DataFrame(columns=columns)
 
-    tableData = []
     for report_host in nfr.scan.report_hosts(root):
         report_items_per_host = nfr.host.report_items(report_host)
 
@@ -1235,7 +1365,8 @@ def extractCredPatch():
             if (report_host_os is None or report_host_os.count('\n') > 0):
                 report_host_os = ""
 
-            row = [ report_fqdn,report_ip,report_host_os,'WMI Available (Windows CredPatch)' ]
+            row = [report_fqdn,report_ip,report_host_os,'WMI Available (Windows CredPatch)']
+            df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
         # Filtering plugin "Patch Report" expluding hosts with "WMI Available"
         elif 66334 in plugin_ids:
@@ -1246,34 +1377,38 @@ def extractCredPatch():
             if (report_host_os is None or report_host_os.count('\n') > 0):
                 report_host_os = ""
 
-            row = [ report_fqdn,report_ip,report_host_os,'Patch Report Available (Linux CredPatch)' ]
+            row = [report_fqdn,
+                   report_ip,
+                   report_host_os,
+                   'Patch Report Available (Linux CredPatch)']
+            df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
-    if len(tableData) > 0:
-        WMIAvailableWorksheet = CreateWorksheet(workbook,'CredPatch Hosts')
-        CreateSheetTable(columns,WMIAvailableWorksheet)
-        AddTableData(tableData,WMIAvailableWorksheet)
-    
+    # Writing the DataFrame
+    if not df.empty:
+        if not args.noclean:
+            df = df.drop_duplicates()
+        WriteDataFrame(df, 'CredPatch Hosts', column_widths)
+
     toc = time.perf_counter()
     if args.verbose:
-        print (f'DEBUG - Completed WMI Available. {len(tableData)} rows took {toc - tic:0.4f} seconds')
+        print(f'DEBUG - Completed WMI Available. {len(df)} rows took {toc - tic:0.4f} seconds')
 
 # Search plugins by keyword to pull out all relevant info
 def searchPlugins(keyword):
     tic = time.perf_counter()
 
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
-    columns = []
-    columns.append(('Hostname',40))
-    columns.append(('IP Address',15))
-    columns.append(('Plugin Name',110))
-    columns.append(('Plugin Output',180))
-
-    tableData = []
+    columns = ['Hostname',
+               'IP Address',
+               'Plugin Name',
+               'Plugin Output']
+    column_widths = [40, 15, 110, 180]
+    df = pd.DataFrame(columns=columns)
 
     # Enumerate through all plugin names and see if keyword is present
     for report_host in nfr.scan.report_hosts(root):
         all_plugins = nfr.host.report_items(report_host)
-        
+
         for plugin in all_plugins:
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
@@ -1283,19 +1418,22 @@ def searchPlugins(keyword):
             if keyword.lower() in plugin_name.lower():
                 output = nfr.plugin.plugin_output(root, report_host, plugin_id)
 
-                row = [ report_fqdn,report_ip,plugin_name,output.strip() ]
-                    
-    if len(tableData) > 0:
-        SearchQueryWorksheet = CreateWorksheet(workbook,f'{keyword} Search Results')
-        CreateSheetTable(columns,SearchQueryWorksheet)
-        AddTableData(tableData,SearchQueryWorksheet)
+                row = [report_fqdn,
+                       report_ip,
+                       plugin_name,
+                       output.strip()]
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+
+    # Writing the DataFrame
+    if not df.empty:
+        if not args.noclean:
+            df = df.drop_duplicates()
+        WriteDataFrame(df, f'{keyword} Search Results', column_widths)
+        print(f'INFO - Please text wrap column D within the {keyword} Search Results worksheet. Highlight column -> Home -> Wrap Text')
 
     toc = time.perf_counter()
     if args.verbose:
-        print (f'DEBUG - Completed Plugin Search. {len(tableData)} rows took {toc - tic:0.4f} seconds')
-
-    if len(tableData) > 0:
-        print (f'INFO - Please text wrap column D within the {keyword} Search Results worksheet. Highlight column -> Home -> Wrap Text')
+        print(f'DEBUG - Completed Plugin Search. {len(df)} rows took {toc - tic:0.4f} seconds')
 
 #--------------------------------------------------------------------------------
 # Common Nessus Functions
@@ -1341,17 +1479,17 @@ def GenerateHostDictionary():
             exit()
     else:
         if args.verbose:
-            print (f'DEBUG - Hosts List Generated. {len(Hosts)} rows took {toc - tic:0.4f} seconds')
+            print(f'DEBUG - Hosts List Generated. {len(Hosts)} rows took {toc - tic:0.4f} seconds')
 
 # -------------------------------------------------------------------------------
 # Excel Functions - First create our Excel workbook
-def CreateWorkBook(workBookName): # TODO
-    workbook = xlsxwriter.Workbook(workBookName)
-
-    if args.verbose:
-        print(f'DEBUG - Using Excel output file: {workBookName}')
-    
-    return workbook
+# def CreateWorkBook(workBookName): # TODO: remove
+#     workbook = xlsxwriter.Workbook(workBookName)
+#
+#     if args.verbose:
+#         print(f'DEBUG - Using Excel output file: {workBookName}')
+#
+#     return workbook
 
 
 def CreateExcelWriter(workBookName):
@@ -1363,39 +1501,39 @@ def CreateExcelWriter(workBookName):
     return excel_writer
 
 # Create worksheet
-def CreateWorksheet(workBook, sheetName): # TODO
-    workSheet = workBook.add_worksheet(sheetName)
-
-    return workSheet
+# def CreateWorksheet(workBook, sheetName): # TODO: remove
+#     workSheet = workBook.add_worksheet(sheetName)
+#
+#     return workSheet
 
 # Format worksheet
-def CreateSheetTable(columns,workSheet): # TODO
-    col = 0
-
-    for column in columns:
-        workSheet.write(0,col,column[0])
-        workSheet.set_column(col,col,column[1])
-        col += 1
-    
-    alpha = string.ascii_uppercase[len(columns)-1]
-    workSheet.autofilter('A1:'+alpha+'1000000')
+# def CreateSheetTable(columns,workSheet): # TODO: remove
+#     col = 0
+#
+#     for column in columns:
+#         workSheet.write(0,col,column[0])
+#         workSheet.set_column(col,col,column[1])
+#         col += 1
+#
+#     alpha = string.ascii_uppercase[len(columns)-1]
+#     workSheet.autofilter('A1:'+alpha+'1000000')
 
 # Write data to worksheet
-def AddTableData(tableData,workSheet): # TODO
-    row = 1
-    col = 0
-    for line in tableData:
-        for item in line:
-            workSheet.write(row,col,item)
-            col += 1
-        col = 0
-        row += 1
+# def AddTableData(tableData,workSheet): # TODO: remove
+#     row = 1
+#     col = 0
+#     for line in tableData:
+#         for item in line:
+#             workSheet.write(row,col,item)
+#             col += 1
+#         col = 0
+#         row += 1
 
 # Finally gracefully clean up 
-def CloseWorkbook(workBook): # TODO
-    workBook.close()
+# def CloseWorkbook(workBook): # TODO: remove
+#     workBook.close()
 
-def WriteDataFrame(dataframe, sheet_name, column_widths):
+def WriteDataFrame(dataframe, sheet_name, column_widths, style=None):
     dataframe.to_excel(excelWriter, sheet_name=sheet_name, index=False, na_rep='N.A')
 
     # Access the xlsxwriter workbook and worksheet objects
@@ -1404,6 +1542,35 @@ def WriteDataFrame(dataframe, sheet_name, column_widths):
     # Set the column widths
     for i, width in enumerate(column_widths):
         worksheet.set_column(i, i, width)
+
+    # Adding colors in the compliance 'Result' column
+    # TODO: 1st result is not styled - whyyyyyyy???
+    if style == 'compliance':
+        # Get the xlsxwriter workbook and worksheet objects
+        excel_book = excelWriter.book
+
+        # Define custom formats
+        good_format = excel_book.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
+        bad_format = excel_book.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
+        neutral_format = excel_book.add_format({'bg_color': '#FFEB9C', 'font_color': '#9C6500'})
+
+        # Iterate over the 'Result' column
+        for row_num, value in enumerate(dataframe['Result']):
+            # Determine the format based on the cell value
+            if value == 'FAILED':
+                cell_format = bad_format
+            elif value == 'PASSED':
+                cell_format = good_format
+            elif value == 'WARNING':
+                cell_format = neutral_format
+            else:
+                cell_format = None
+
+            # Apply the format if one was determined
+            if cell_format:
+                # +1 because enumerate is zero-based and Excel rows are 1-based
+                # +1 again to account for the header row
+                worksheet.write(row_num + 1 + 1, dataframe.columns.get_loc('Result'), value, cell_format)
 
 def CloseExcelWriter(writer):
     writer.close()
@@ -1451,7 +1618,7 @@ tic = time.perf_counter()
 
 args = parser.parse_args()
 if args.verbose:
-    print (f'DEBUG - Arguments provided: {args}')
+    print(f'DEBUG - Arguments provided: {args}')
 
 # If a valid .nessus file has been provided, create our Excel workbook based on its name
 if not args.out:
@@ -1486,7 +1653,7 @@ except IOError as e:
     exit(1)
 
 # Create our Excel workbook
-workbook = CreateWorkBook(args.out)
+# workbook = CreateWorkBook(args.out)
 excelWriter = CreateExcelWriter(args.out)
 
 # Split out comma separated modules
@@ -1590,48 +1757,8 @@ else:
             print(f'WARN - provided module "{module}" is invalid. Omitting') 
 
 toc = time.perf_counter()
-print (f'COMPLETED! Output can be found in {os.getcwd()}{os.sep}{args.out} Total time taken: {toc - tic:0.4f} seconds')
-CloseWorkbook(workbook) # TODO
+print(f'COMPLETED! Output can be found in {os.getcwd()}{os.sep}{args.out} Total time taken: {toc - tic:0.4f} seconds')
+# CloseWorkbook(workbook) # TODO: remove
 CloseExcelWriter(excelWriter)
-
-# Adding styles
-if additional_style:
-    print('doing additional style')
-    # Adding some style to the Results
-    # TODO make it work somehow:
-    # - open the workbook with xlsxwriter
-    # - grab the worksheet
-    # - do the magic
-    # https://xlsxwriter.readthedocs.io/format.html#set_bg_color
-    '''
-    if additional_style == 'compliance':
-        # Define custom cells format similar to Excel's built-in styles
-        good_format = workbook.add_format()
-        good_format.set_bg_color('#C6EFCE')
-        good_format.set_font_color('#006100')
-
-        bad_format = workbook.add_format()
-        # bad_format.add_format({'fg_color': '#FFC7CE', 'font_color': '#9C0006'})
-        bad_format.set_bg_color('#FFC7CE')
-        bad_format.set_font_color('#9C0006')
-
-        neutral_format = workbook.add_format()
-        neutral_format.set_bg_color('#FFEB9C')
-        neutral_format.set_font_color('#9C6500')
-        # neutral_format.add_format({'fg_color': '#FFEB9C', 'font_color': '#9C6500'})
-
-        # Iterate over the 'Result' column and apply formats
-        # worksheet.write(1, 1, 'AAAAAAAAA', bad_format)
-        result_col_idx = dataframe.columns.get_loc('Result')
-        for row_idx, result in enumerate(dataframe['Result']):
-            if result == 'FAILED':
-                worksheet.write(row_idx + 1, result_col_idx, result, bad_format)
-            elif result == 'PASSED':
-                worksheet.write(row_idx + 1, result_col_idx, result, good_format)
-            elif result == 'WARNING':
-                worksheet.write(row_idx + 1, result_col_idx, result, neutral_format)
-            # 'ERROR' and other values are not formatted
-    '''
-
 
 exit()
