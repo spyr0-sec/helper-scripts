@@ -30,7 +30,11 @@ import pandas as pd
 #                   - Removed remediations module as now info is captured from outdated third party module. Removed io dependancy.
 # v1.5 - 11/05/2023 - Several bug fixes inclduing unix compliance file handing and updated nfr dependancies.
 # Credit @lapolis
-# v1.6 - 19/01/2024 - Panda and filetring implementation. Enhanced performance and output.
+# v1.6 - 22/01/2024 - Converted to use Pandas.
+#                   - Improved output.
+#                   - Automatically remove doubles.
+#                   - Custom aggregation of results for 'Outdated Software' (more to come)
+#                   - Automatically text wrap.
 # Credit @lapolis
 
 # STANDARDS
@@ -90,7 +94,9 @@ def extractHosts():
             print(f'{report_ip} {report_fqdn} {report_host_os}', file=txt_file)
 
             # Write to Excel worksheet
-            row = [report_ip,report_fqdn,report_host_os]
+            row = [report_ip,
+                   report_fqdn,
+                   report_host_os]
             df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
     
     txt_file.close()
@@ -556,7 +562,12 @@ def extractLastUpdated():
                     update_level = line.replace(' Latest effective update level : ','')
 
             # Write to Excel worksheet
-            row = [report_fqdn,report_ip,update_level.replace('_','/')]
+            row = [report_fqdn,
+                   report_ip,
+                   update_level.replace('_','/'),
+                   None,
+                   None]
+            df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
         # SMB Quick Fix Engineering patch output
         plugin_62042 = nfr.plugin.plugin_outputs(root, report_host, '62042')
@@ -575,7 +586,7 @@ def extractLastUpdated():
                     # Write to Excel worksheet
                     row = [report_fqdn,
                            report_ip,
-                           "",
+                           None,
                            patch,
                            date[-1]]
                     df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
@@ -658,8 +669,8 @@ def extractMSPatches():
     if not df.empty:
         if not args.noclean:
             df = df.drop_duplicates()
-        WriteDataFrame(df, 'Missing Microsoft Patches', column_widths)
-        print("INFO - Please text wrap column F and G within the Missing Microsoft Patches worksheet. Highlight column -> Home -> Wrap Text")
+        WriteDataFrame(df, 'Missing Microsoft Patches', column_widths, style='severity', txtwrap=['CVE', 'Additional Information'])
+        # print("INFO - Please text wrap column F and G within the Missing Microsoft Patches worksheet. Highlight column -> Home -> Wrap Text")
 
     toc = time.perf_counter()
     if args.verbose:
@@ -734,8 +745,8 @@ def extractLinuxPatches():
     if not df.empty:
         if not args.noclean:
             df = df.drop_duplicates()
-        WriteDataFrame(df, 'Missing Linux Patches', column_widths)
-        print("INFO - Please text wrap column H within the Missing Linux Patches worksheet. Highlight column -> Home -> Wrap Text")
+        WriteDataFrame(df, 'Missing Linux Patches', column_widths, style='severity', txtwrap=['CVE'])
+        # print("INFO - Please text wrap column H within the Missing Linux Patches worksheet. Highlight column -> Home -> Wrap Text")
 
     toc = time.perf_counter()
     if args.verbose:
@@ -812,7 +823,10 @@ def extractInstalledSoftware():
                     pass
                 else:
                     # Write to Excel worksheet
-                    row = [report_fqdn,report_ip,line.strip()]
+                    row = [report_fqdn,
+                           report_ip,
+                           line.strip()]
+                    df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
         
         # Linux (rpm -qa etc.)
         plugin_22869 = nfr.plugin.plugin_output(root, report_host, '22869')
@@ -951,9 +965,8 @@ def extractOutdatedSoftware():
             df = df[columns]
 
         # Writing the DataFrame
-        # TODO: do some styling for the Severity column?
-        WriteDataFrame(df, 'Outdated Software', column_widths)
-        print("INFO - Please text wrap column F within the Outdated Software worksheet. Highlight column -> Home -> Wrap Text")
+        WriteDataFrame(df, 'Outdated Software', column_widths, style='severity', txtwrap=['CVE'])
+        # print("INFO - Please text wrap column F within the Outdated Software worksheet. Highlight column -> Home -> Wrap Text")
         if args.noclean:
             print(f'INFO - Use "Remove Duplicates" on the Outdated Software worksheet if required. Can be found within the Data ribbon in Excel')
 
@@ -1329,11 +1342,16 @@ def extractWeakSSHAlgorithms():
 
     # Writing the DataFrame
     # TODO: this could also be enhanced with ssh-audit list ?
+    # TODO: Aggregate columns E, F, G and H with lambda x: '\n'.join(i for i in x.unique() if i)
     if not df.empty:
         if not args.noclean:
             df = df.drop_duplicates()
-        WriteDataFrame(df, 'Weak SSH Algorithms', column_widths)
-        print(f'INFO - Please text wrap columns E,F,G,H within the Weak SSH Algorithms worksheet. Highlight column -> Home -> Wrap Text')
+        col_to_wrap = ['Weak Encryption Algorithm',
+                       'Weak Key Exchange Algorithm',
+                       'Weak Cipher Block Chaining Cipher',
+                       'Weak Message Authentication Code Algorithm']
+        WriteDataFrame(df, 'Weak SSH Algorithms', column_widths, txtwrap=col_to_wrap)
+        # print(f'INFO - Please text wrap columns E,F,G,H within the Weak SSH Algorithms worksheet. Highlight column -> Home -> Wrap Text')
 
     toc = time.perf_counter()
     if args.verbose:
@@ -1365,7 +1383,10 @@ def extractCredPatch():
             if (report_host_os is None or report_host_os.count('\n') > 0):
                 report_host_os = ""
 
-            row = [report_fqdn,report_ip,report_host_os,'WMI Available (Windows CredPatch)']
+            row = [report_fqdn,
+                   report_ip,
+                   report_host_os,
+                   'WMI Available (Windows CredPatch)']
             df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
         # Filtering plugin "Patch Report" expluding hosts with "WMI Available"
@@ -1428,8 +1449,8 @@ def searchPlugins(keyword):
     if not df.empty:
         if not args.noclean:
             df = df.drop_duplicates()
-        WriteDataFrame(df, f'{keyword} Search Results', column_widths)
-        print(f'INFO - Please text wrap column D within the {keyword} Search Results worksheet. Highlight column -> Home -> Wrap Text')
+        WriteDataFrame(df, f'{keyword} Search Results', column_widths, txtwrap=['Plugin Output'])
+        # print(f'INFO - Please text wrap column D within the {keyword} Search Results worksheet. Highlight column -> Home -> Wrap Text')
 
     toc = time.perf_counter()
     if args.verbose:
@@ -1481,17 +1502,6 @@ def GenerateHostDictionary():
         if args.verbose:
             print(f'DEBUG - Hosts List Generated. {len(Hosts)} rows took {toc - tic:0.4f} seconds')
 
-# -------------------------------------------------------------------------------
-# Excel Functions - First create our Excel workbook
-# def CreateWorkBook(workBookName): # TODO: remove
-#     workbook = xlsxwriter.Workbook(workBookName)
-#
-#     if args.verbose:
-#         print(f'DEBUG - Using Excel output file: {workBookName}')
-#
-#     return workbook
-
-
 def CreateExcelWriter(workBookName):
     excel_writer = pd.ExcelWriter(args.out, engine='xlsxwriter')
 
@@ -1500,40 +1510,7 @@ def CreateExcelWriter(workBookName):
 
     return excel_writer
 
-# Create worksheet
-# def CreateWorksheet(workBook, sheetName): # TODO: remove
-#     workSheet = workBook.add_worksheet(sheetName)
-#
-#     return workSheet
-
-# Format worksheet
-# def CreateSheetTable(columns,workSheet): # TODO: remove
-#     col = 0
-#
-#     for column in columns:
-#         workSheet.write(0,col,column[0])
-#         workSheet.set_column(col,col,column[1])
-#         col += 1
-#
-#     alpha = string.ascii_uppercase[len(columns)-1]
-#     workSheet.autofilter('A1:'+alpha+'1000000')
-
-# Write data to worksheet
-# def AddTableData(tableData,workSheet): # TODO: remove
-#     row = 1
-#     col = 0
-#     for line in tableData:
-#         for item in line:
-#             workSheet.write(row,col,item)
-#             col += 1
-#         col = 0
-#         row += 1
-
-# Finally gracefully clean up 
-# def CloseWorkbook(workBook): # TODO: remove
-#     workBook.close()
-
-def WriteDataFrame(dataframe, sheet_name, column_widths, style=None):
+def WriteDataFrame(dataframe, sheet_name, column_widths, style=None, txtwrap=None):
     dataframe.to_excel(excelWriter, sheet_name=sheet_name, index=False, na_rep='N.A')
 
     # Access the xlsxwriter workbook and worksheet objects
@@ -1543,12 +1520,12 @@ def WriteDataFrame(dataframe, sheet_name, column_widths, style=None):
     for i, width in enumerate(column_widths):
         worksheet.set_column(i, i, width)
 
-    # Adding colors in the compliance 'Result' column
-    # TODO: 1st result is not styled - whyyyyyyy???
-    if style == 'compliance':
-        # Get the xlsxwriter workbook and worksheet objects
+    # Get the xlsxwriter workbook and worksheet objects
+    if style or txtwrap:
         excel_book = excelWriter.book
 
+    # Adding colors in the compliance 'Result' column
+    if style == 'compliance':
         # Define custom formats
         good_format = excel_book.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
         bad_format = excel_book.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
@@ -1569,8 +1546,39 @@ def WriteDataFrame(dataframe, sheet_name, column_widths, style=None):
             # Apply the format if one was determined
             if cell_format:
                 # +1 because enumerate is zero-based and Excel rows are 1-based
-                # +1 again to account for the header row
-                worksheet.write(row_num + 1 + 1, dataframe.columns.get_loc('Result'), value, cell_format)
+                worksheet.write(row_num + 1, dataframe.columns.get_loc('Result'), value, cell_format)
+    elif style == 'severity':
+        # Define custom formats
+        low_format = excel_book.add_format({'bg_color': '#ffff00'})
+        medium_format = excel_book.add_format({'bg_color': '#f79646'})
+        high_format = excel_book.add_format({'bg_color': '#ff0000'})
+        critical_format = excel_book.add_format({'bg_color': '#954eca'})
+
+        # Iterate over the 'Result' column
+        for row_num, value in enumerate(dataframe['Severity']):
+            # Determine the format based on the cell value
+            if value == 'Critical':
+                cell_format = critical_format
+            elif value == 'High':
+                cell_format = high_format
+            elif value == 'Medium':
+                cell_format = medium_format
+            elif value == 'Low':
+                cell_format = low_format
+            else:
+                cell_format = None
+
+            # Apply the format if one was determined
+            if cell_format:
+                # +1 because enumerate is zero-based and Excel rows are 1-based
+                worksheet.write(row_num + 1, dataframe.columns.get_loc('Severity'), value, cell_format)
+
+    if txtwrap:
+        txtwrap_format = excel_book.add_format({'text_wrap': True})
+        for col in txtwrap:
+            description_col_idx = dataframe.columns.get_loc(col)
+            worksheet.set_column(description_col_idx, description_col_idx, None, txtwrap_format)
+
 
 def CloseExcelWriter(writer):
     writer.close()
@@ -1653,7 +1661,6 @@ except IOError as e:
     exit(1)
 
 # Create our Excel workbook
-# workbook = CreateWorkBook(args.out)
 excelWriter = CreateExcelWriter(args.out)
 
 # Split out comma separated modules
@@ -1758,7 +1765,6 @@ else:
 
 toc = time.perf_counter()
 print(f'COMPLETED! Output can be found in {os.getcwd()}{os.sep}{args.out} Total time taken: {toc - tic:0.4f} seconds')
-# CloseWorkbook(workbook) # TODO: remove
 CloseExcelWriter(excelWriter)
 
 exit()
