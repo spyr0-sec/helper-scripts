@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-import os, re, argparse, shutil, string, time, textwrap, xlsxwriter
+import os, re, argparse, shutil, time, textwrap
 from xml.etree.ElementTree import ParseError
 import nessus_file_reader as nfr
 import pandas as pd
@@ -1346,6 +1346,19 @@ def extractWeakSSHAlgorithms():
     if not df.empty:
         if not args.noclean:
             df = df.drop_duplicates()
+
+            # define aggregation functions for each column
+            # TODO: define a function for the repeated methods
+            aggregations = {
+                'Hostname': lambda x: next((i for i in reversed(x.tolist()) if i), None),                     # Keep the first non-empty
+                'Weak Encryption Algorithm': lambda x: '\n'.join(i for i in x.unique() if i),                 # Concat with \n
+                'Weak Key Exchange Algorithm': lambda x: '\n'.join(i for i in x.unique() if i),               # Concat with \n
+                'Weak Cipher Block Chaining Cipher': lambda x: '\n'.join(i for i in x.unique() if i),         # Concat with \n
+                'Weak Message Authentication Code Algorithm': lambda x: '\n'.join(i for i in x.unique() if i) # Concat with \n
+            }
+            df = df.groupby(['IP Address', 'Protocol', 'Port'], as_index=False).agg(aggregations)
+            df = df[columns]
+
         col_to_wrap = ['Weak Encryption Algorithm',
                        'Weak Key Exchange Algorithm',
                        'Weak Cipher Block Chaining Cipher',
