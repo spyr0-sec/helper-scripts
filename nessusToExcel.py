@@ -613,7 +613,7 @@ def extractMSPatches():
                'Exploit Available',
                'CVE',
                'Additional Information']
-    column_widths = [40, 15, 10, 110, 17, 17, 180]
+    column_widths = [40, 15, 10, 110, 17, 14, 180]
     df = pd.DataFrame(columns=columns)
 
     # Will need to assess each plugin for its family
@@ -689,7 +689,7 @@ def extractLinuxPatches():
                'Latest Package Version',
                'Exploit Available',
                'CVE']
-    column_widths = [40, 15, 10, 67, 50, 50, 17, 17]
+    column_widths = [40, 15, 10, 67, 50, 50, 17, 14]
     df = pd.DataFrame(columns=columns)
 
     # Local security check family misses outdated MySQL rpms among others query every output for "remote package"
@@ -869,7 +869,7 @@ def extractOutdatedSoftware():
                 'Latest Version',
                 'Path',
                 'End of Support Date' ]
-    column_widths = [40, 15, 10, 100, 17, 17, 70, 55, 100, 20]
+    column_widths = [40, 15, 10, 100, 17, 14, 70, 55, 100, 20]
 
     # Creating an empty DataFrame with these columns
     df = pd.DataFrame(columns=columns)
@@ -1510,19 +1510,24 @@ def CreateExcelWriter(workBookName):
 
     return excel_writer
 
-def WriteDataFrame(dataframe, sheet_name, column_widths, style=None, txtwrap=None):
+def WriteDataFrame(dataframe, sheet_name, column_widths, style=None, txtwrap=[]):
     dataframe.to_excel(excelWriter, sheet_name=sheet_name, index=False, na_rep='N.A')
+
+    # Get the xlsxwriter workbook and worksheet objects
+    if style or txtwrap:
+        excel_book = excelWriter.book
+        txtwrap_format = excel_book.add_format({'text_wrap': True})
 
     # Access the xlsxwriter workbook and worksheet objects
     worksheet = excelWriter.sheets[sheet_name]
 
     # Set the column widths
     for i, width in enumerate(column_widths):
-        worksheet.set_column(i, i, width)
+        if dataframe.columns[i-1] in txtwrap:
+            worksheet.set_column(i, i, width, txtwrap_format)
+        else:
+            worksheet.set_column(i, i, width)
 
-    # Get the xlsxwriter workbook and worksheet objects
-    if style or txtwrap:
-        excel_book = excelWriter.book
 
     # Adding colors in the compliance 'Result' column
     if style == 'compliance':
@@ -1573,11 +1578,6 @@ def WriteDataFrame(dataframe, sheet_name, column_widths, style=None, txtwrap=Non
                 # +1 because enumerate is zero-based and Excel rows are 1-based
                 worksheet.write(row_num + 1, dataframe.columns.get_loc('Severity'), value, cell_format)
 
-    if txtwrap:
-        txtwrap_format = excel_book.add_format({'text_wrap': True})
-        for col in txtwrap:
-            description_col_idx = dataframe.columns.get_loc(col)
-            worksheet.set_column(description_col_idx, description_col_idx, None, txtwrap_format)
 
 
 def CloseExcelWriter(writer):
