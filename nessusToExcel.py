@@ -631,12 +631,13 @@ def extractMSPatches():
             cve_list = nfr.plugin.report_item_values(plugin, 'cve')
 
             if exploitability_ease == 'No known exploits are available':
-                exploit_exists = 'No'
+                exploit_exists = False
             elif exploitability_ease == 'Exploits are available':
-                exploit_exists = 'Yes'
+                exploit_exists = True
             else:
                 # leaving this one here for potential debugging
-                exploit_exists = '???'
+                exploit_exists = False
+                print(f'ERROR - Unknown exploitability for Missing Microsoft Patch - Plugin: {plugin_name} - Host: {report_ip}')
 
             if cve_list:
                 cve_text = '\n'.join(cve_list)
@@ -711,12 +712,13 @@ def extractLinuxPatches():
                 cve_list = nfr.plugin.report_item_values(plugin, 'cve')
 
                 if exploitability_ease == 'No known exploits are available':
-                    exploit_exists = 'No'
+                    exploit_exists = False
                 elif exploitability_ease == 'Exploits are available':
-                    exploit_exists = 'Yes'
+                    exploit_exists = True
                 else:
                     # leaving this one here for potential debugging
-                    exploit_exists = '???'
+                    exploit_exists = False
+                    print(f'ERROR - Unknown exploitability for Missing Microsoft Patch - Plugin: {plugin_name} - Host: {report_ip}')
 
                 if cve_list:
                     cve_text = '\n'.join(cve_list)
@@ -909,7 +911,8 @@ def extractOutdatedSoftware():
                     exploit_exists = False
                 # leaving this one here for potential debugging
                 else:
-                    exploit_exists = '???'
+                    exploit_exists = False
+                    print(f'ERROR - Unknown exploitability for Missing Microsoft Patch - Plugin: {plugin_name} - Host: {report_ip}')
 
                 lines = plugin_output.splitlines()
                 for idx, line in enumerate(lines):
@@ -1524,6 +1527,7 @@ def CreateExcelWriter(workBookName):
     return excel_writer
 
 def WriteDataFrame(dataframe, sheet_name, column_widths, style=None, txtwrap=[]):
+    # https://xlsxwriter.readthedocs.io/worksheet.html
     dataframe.to_excel(excelWriter, sheet_name=sheet_name, index=False, na_rep='N.A')
 
     # Get the xlsxwriter workbook and worksheet objects
