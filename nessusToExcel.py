@@ -1669,7 +1669,7 @@ if not args.out:
     if args.verbose:
         print(f'DEBUG - No output filename given, new value: {args.out}')
 else:
-    if not '.xlsx' in args.out:
+    if not args.out.endswith('.xlsx'):
         args.out = f'{args.out}.xlsx'
         if args.verbose:
             print(f'DEBUG - Output file does not contain extension, new value: {args.out}')
@@ -1680,7 +1680,7 @@ else:
 # Check if the output files exist and are writable
 try:
     if os.path.exists(args.out):
-        with open(args.out, "a") as open_excel: # Append mode - write mode deletes file contents
+        with open(args.out, 'a') as open_excel:
             if not args.quiet:
                 excel_answer = input(f'WARN - {args.out} is about to be overwritten, would you like to continue? [Y/n] ')
                 if excel_answer.lower() == 'n' or excel_answer.lower() == 'no':
