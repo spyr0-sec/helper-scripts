@@ -630,14 +630,15 @@ def extractMSPatches():
             exploitability_ease = nfr.plugin.report_item_value(plugin, 'exploitability_ease')
             cve_list = nfr.plugin.report_item_values(plugin, 'cve')
 
+            exploit_exists_debugging = False
+            exploit_exists = False
             if exploitability_ease == 'No known exploits are available':
                 exploit_exists = False
             elif exploitability_ease == 'Exploits are available':
                 exploit_exists = True
             else:
                 # leaving this one here for potential debugging
-                exploit_exists = False
-                print(f'ERROR - Unknown exploitability for Missing Microsoft Patch - Plugin: {plugin_name} - Host: {report_ip}')
+                exploit_exists_debugging = True
 
             if cve_list:
                 cve_text = '\n'.join(cve_list)
@@ -655,6 +656,10 @@ def extractMSPatches():
                        output.strip()]
                 df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
+                # leaving this one here for potential debugging
+                if exploit_exists_debugging:
+                    print(f'ERROR - Unknown exploitability for Missing Microsoft Patch - Plugin: {plugin_name} - Host: {report_ip}')
+
             elif (plugin_family == "Windows") and (plugin_name.startswith('Security Updates for ')):
                 output = nfr.plugin.plugin_output(root, report_host, plugin_id)
                 row = [report_fqdn,
@@ -665,6 +670,10 @@ def extractMSPatches():
                        cve_text,
                        output.strip()]
                 df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+
+                # leaving this one here for potential debugging
+                if exploit_exists_debugging:
+                    print(f'ERROR - Unknown exploitability for Missing Microsoft Patch - Plugin: {plugin_name} - Host: {report_ip}')
 
     # Writing the DataFrame
     if not df.empty:
@@ -711,14 +720,15 @@ def extractLinuxPatches():
                 exploitability_ease = nfr.plugin.report_item_value(plugin, 'exploitability_ease')
                 cve_list = nfr.plugin.report_item_values(plugin, 'cve')
 
+                exploit_exists = False
+                exploit_exists_debugging = False
                 if exploitability_ease == 'No known exploits are available':
                     exploit_exists = False
                 elif exploitability_ease == 'Exploits are available':
                     exploit_exists = True
                 else:
                     # leaving this one here for potential debugging
-                    exploit_exists = False
-                    print(f'ERROR - Unknown exploitability for Missing Microsoft Patch - Plugin: {plugin_name} - Host: {report_ip}')
+                    exploit_exists_debugging = True
 
                 if cve_list:
                     cve_text = '\n'.join(cve_list)
@@ -742,6 +752,10 @@ def extractLinuxPatches():
                                exploit_exists,
                                cve_text]
                         df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+
+                        # leaving this one here for potential debugging
+                        if exploit_exists_debugging:
+                            print(f'ERROR - Unknown exploitability for Missing Microsoft Patch - Plugin: {plugin_name} - Host: {report_ip}')
 
     # Writing the DataFrame
     if not df.empty:
@@ -902,6 +916,8 @@ def extractOutdatedSoftware():
                 # resetting all variables
                 installed_version = None; latest_version = None; eol_date = None; installed_path = None
 
+                exploit_exists = False
+                exploit_exists_debugging = False
                 if exploitability_ease == 'No known exploits are available':
                     exploit_exists = False
                 elif exploitability_ease == 'Exploits are available':
@@ -909,10 +925,8 @@ def extractOutdatedSoftware():
                 # this is when a software is EoL (marked in line + 13)
                 elif exploitability_ease is None:
                     exploit_exists = False
-                # leaving this one here for potential debugging
                 else:
-                    exploit_exists = False
-                    print(f'ERROR - Unknown exploitability for Missing Microsoft Patch - Plugin: {plugin_name} - Host: {report_ip}')
+                    exploit_exists_debugging = True
 
                 lines = plugin_output.splitlines()
                 for idx, line in enumerate(lines):
@@ -946,6 +960,10 @@ def extractOutdatedSoftware():
                                installed_path,
                                eol_date]
                         df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+
+                        # leaving this one here for potential debugging
+                        if exploit_exists_debugging:
+                            print(f'ERROR - Unknown exploitability for Missing Microsoft Patch - Plugin: {plugin_name} - Host: {report_ip}')
 
     if not df.empty:
 
@@ -1050,7 +1068,7 @@ def extractUnquotedServicePaths():
                 if len(line) > 2 and 'Nessus found the following' not in line:
                     service,path = line.split(':',1)
                     # Write to Excel worksheet
-                    if "C:\Program Files".lower() in path.lower():
+                    if 'C:\Program Files'.lower() in path.lower():
                         exploitability = 'Low'
                     else:
                         exploitability = 'High'
@@ -1688,7 +1706,7 @@ argvars['module'] = [mod.strip() for mod in argvars['module'].split(",")]
 if 'compliance' in argvars['module'] or "all" in args.module:
 
     # Will ask user if they would like to take a backup of the Nessus file first as we are manipulating it
-    backup_file = re.sub('\.nessus$', '_BACKUP.nessus', args.file)
+    backup_file = re.sub(r'\.nessus$', '_BACKUP.nessus', args.file)
     backupPath = os.getcwd() + os.sep + f'{backup_file}'
     if not os.path.isfile(backupPath):
         if args.quiet:
