@@ -45,7 +45,7 @@ import pandas as pd
 # Globals hosts dictionary to lookup host information by report_host
 Hosts = {}
 root = ""
-additional_style = {}
+# this is needed for custom sorting
 severity_hierarchy = {'Critical': 4, 'High': 3, 'Medium': 2, 'Low': 1}
 
 # Functions
@@ -215,9 +215,7 @@ def extractCompliance():
     if not df.empty:
         # df = df.sort_values(by='IP Address')
         WriteDataFrame(df, 'Compliance', column_widths, style='compliance')
-        # saving the dataframe for the later styling
-        # additional_style['compliance'] = df
-        
+
     toc = time.perf_counter()
     if args.verbose:
         print(f'DEBUG - Completed Compliance. {len(df)} rows took {toc - tic:0.4f} seconds')
