@@ -370,9 +370,10 @@ def extractDatabases():
                 if plugin_id == 22073:
 
                     lines = oracle_plugin.splitlines()
+                    oracle_version = None
                     for line in lines:
                         if 'Version' in line:
-                            oracle_version = line.split()
+                            oracle_version = line.split()[-1].strip()
 
                     oracle_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
                     oracle_port = nfr.plugin.report_item_value(report_item, 'port')
@@ -383,7 +384,7 @@ def extractDatabases():
                            oracle_protocol,
                            oracle_port,
                            "Oracle Database",
-                           oracle_version[-1].strip(),
+                           oracle_version,
                            "",""]
                     df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
