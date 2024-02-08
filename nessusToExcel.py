@@ -814,6 +814,10 @@ def extractOpenPorts():
 # Perform software audit on all Windows machines
 def extractInstalledSoftware():
     tic = time.perf_counter()
+    skip_this = [' - check Audit Trail',
+                 ' - not enabled',
+                 'Here is the list',
+                 'The following']
 
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
     columns = ['Hostname',
@@ -834,7 +838,7 @@ def extractInstalledSoftware():
             for line in lines:
                 kb_match = re.match(r"  KB\d[0-9]{5,8}", line)
 
-                if line == "" or 'The following' in line or kb_match: 
+                if line == '' or any(s in line for s in skip_this) or kb_match:
                     pass
                 else:
                     # Write to Excel worksheet
@@ -849,8 +853,7 @@ def extractInstalledSoftware():
         if not re.match('[Cc]heck Audit Trail', plugin_22869):
             lines = plugin_22869.splitlines()
             for line in lines:
-
-                if line == "" or 'Here is the list' in line: 
+                if line == '' or any(s in line for s in skip_this):
                     pass
                 else:
                     # Write to Excel worksheet
