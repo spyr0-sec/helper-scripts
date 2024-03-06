@@ -36,6 +36,8 @@ import pandas as pd
 #                   - Custom aggregation of results for 'Outdated Software' (more to come)
 #                   - Automatically text wrap.
 # Credit @lapolis
+# v1.7 - 06/03/2024 - Added TLS module
+# Credit @lapolis
 
 # STANDARDS
 # Columns order - Hostname / IP Address / Other (Except for hosts which will be in reporter format of IP / Hostname / OS)
@@ -68,6 +70,7 @@ def extractAll():
     extractWeakServicePermissions()
     extractWeakSSHAlgorithms()
     extractCredPatch()
+    extractTLSWeaknesses()
 
 # Extract system information
 def extractHosts():
@@ -1450,6 +1453,132 @@ def extractCredPatch():
     if args.verbose:
         print(f'DEBUG - Completed WMI Available. {len(df)} rows took {toc - tic:0.4f} seconds')
 
+
+# Extract all TLS issue
+def extractTLSWeaknesses():
+    tic = time.perf_counter()
+
+    # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
+    columns = ['Hostname',
+               'IP Address',
+               'Protocol',
+               'Port',
+               'SSL Certificate Cannot Be Trusted',
+               'SSL Certificate Expiry',
+               'SSL Self-Signed Certificate',
+               'Certificate chain keys less than 2048 bits in lengt',
+               'NULL ciphers suites accepte',
+               'Anonymous cipher suites accepted',
+               'Weak strength ciphers accepted',
+               'RC4 cipher suites accepted',
+               'Plaintext injection (insecure renegotiation)',
+               'Susceptibility to Heartbleed attack (insufficient patching)',
+               'Susceptibility to CRIME attack (HTTP compression)',
+               'Susceptibility BEAST attack (CBC ciphers)',
+               'Change Cipher Spec Injection (insufficient patching)',
+               'Susceptibility to SSL POODLE attack (SSL 3.0 enabled)',
+               'Susceptibility to TLS POODLE attack (insufficient patching)',
+               'Susceptibility to DROWN attack (SSL 2.0 enabled)',
+               'Susceptibility to FREAK attack (export grade RSA keys)',
+               'OpenSSL Padding Oracle Attack',
+               'Susceptibility to SWEET32 attack (supports 64 bit block ciphers)',
+               'Susceptibility to LOGJAM attack (weak DH key exchange supported)',
+               'Certificate signed with a weak hashing algorithm',
+               'Susceptibility to LUCKY13 attack (supports CBC encryption cipher suites)',
+               'Protocols with known weaknesses allowed']
+
+    column_widths = [40, 15, 10, 6, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25]
+    df = pd.DataFrame(columns=columns)
+
+    # match the plugin ID with the row[] column index to modify
+    plugins = {'51192': 4,  # 'SSL Certificate Cannot Be Trusted',
+               '15901': 5,  # 'SSL Certificate Expiry',
+               '57582': 6,  # 'SSL Self-Signed Certificate',
+               '69551': 7,  # 'Certificate chain keys less than 2048 bits in lenght',
+               '66848': 8,  # 'NULL ciphers suites accepted',
+               '31705': 9,  # 'Anonymous cipher suites accepted',
+               '26928': 10,  # 'Weak strength ciphers accepted',
+               '65821': 11,  # 'RC4 cipher suites accepted',
+               '42880': 12,  # 'Plaintext injection (insecure renegotiation)',
+               '73412': 13,  # 'Susceptibility to Heartbleed attack (insufficient patching)',
+               '62565': 14,  # 'Susceptibility to CRIME attack (HTTP compression)',
+               '58751': 15,  # 'Susceptibility BEAST attack (CBC ciphers)',
+               '74326': 16,  # 'Change Cipher Spec Injection (insufficient patching)',
+               '78479': 17,  # 'Susceptibility to SSL POODLE attack (SSL 3.0 enabled)',
+               '80035': 18,  # 'Susceptibility to TLS POODLE attack (insufficient patching)',
+               '89058': 19,  # 'Susceptibility to DROWN attack (SSL 2.0 enabled)',
+               '81606': 20,  # 'Susceptibility to FREAK attack (export grade RSA keys)',
+               '91572': 21,  # 'OpenSSL Padding Oracle Attack',
+               '42873': 22,  # 'Susceptibility to SWEET32 attack (supports 64 bit block ciphers)',
+               '94437': 22,  # 'Susceptibility to SWEET32 attack (supports 64 bit block ciphers)',
+               '83875': 23,  # 'Susceptibility to LOGJAM attack (weak DH key exchange supported)',
+               '95631': 24,  # 'Certificate signed with a weak hashing algorithm',
+               '70544': 25,  # 'Susceptibility to LUCKY13 attack (supports CBC encryption cipher suites)',
+               '20007': 26,  # 'Protocols with known weaknesses allowed',
+               '104743': 26}  # 'Protocols with known weaknesses allowed'
+
+    # this will be used to store all issues
+    host_dict = {}
+    for report_host in nfr.scan.report_hosts(root):
+        report_ip = nfr.host.resolved_ip(report_host)
+
+
+        report_items_per_host = nfr.host.report_items(report_host)
+        for report_item in report_items_per_host:
+
+            plugin_id = str(nfr.plugin.report_item_value(report_item, 'pluginID'))
+            if plugin_id in plugins:
+                row = [None] * len(columns)
+                # mark it as vulnerable
+                row[ plugins[plugin_id] ] = 'r'
+                report_fqdn = Hosts[report_ip]
+                report_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                report_port = nfr.plugin.report_item_value(report_item, 'port')
+
+                # mark all the 0s as not vulnerable
+                row = [value if value is not None else 'a' for value in row]
+
+                # add the host info
+                row[0] = report_fqdn
+                row[1] = report_ip
+                row[2] = report_protocol
+                row[3] = report_port
+
+                # add the row
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+
+
+    # Writing the DataFrame
+    if not df.empty:
+        if not args.noclean:
+            df = df.drop_duplicates()
+
+            # congregate all findings
+            # define aggregation functions for each column
+            # TODO: define a function for the repeated methods
+            aggregations = {
+                'Hostname': lambda x: next((i for i in reversed(x.tolist()) if i), None),  # Keep the first non-empty
+            }
+            exclude_columns = ['IP Address', 'Protocol', 'Port', 'Hostname']
+
+            # Apply a default aggregation logic to all other columns
+            # This is used to keep the vulnerable mark
+            for column in df.columns:
+                if column not in exclude_columns:
+                    aggregations[column] = lambda x: 'r' if 'r' in x.values else 'a'
+
+            df = df.groupby(['IP Address', 'Protocol', 'Port'], as_index=False).agg(aggregations)
+            df = df[columns]
+
+            # drop all columns that has no issues
+            df = df.drop(columns=[col for col in df if (df[col] == 'a').all()])
+
+        WriteDataFrame(df, 'TLS Issues', column_widths[:len(df.columns)], style='tls')
+
+    toc = time.perf_counter()
+    if args.verbose:
+        print(f'DEBUG - Completed TLS Issues. {len(df)} rows took {toc - tic:0.4f} seconds')
+
 # Search plugins by keyword to pull out all relevant info
 def searchPlugins(keyword):
     tic = time.perf_counter()
@@ -1527,7 +1656,10 @@ def GenerateHostDictionary():
             report_fqdn = None
 
         report_ip = nfr.host.resolved_ip(report_host)
-        Hosts[report_ip] = report_fqdn
+        if report_ip not in Hosts or (report_fqdn and not Hosts[report_ip]):
+            # Set the key value only if the key does not exist
+            # or if report_fqdn is non-empty and Hosts[report_ip] is currently empty
+            Hosts[report_ip] = report_fqdn
 
     toc = time.perf_counter()
 
@@ -1589,6 +1721,7 @@ def WriteDataFrame(dataframe, sheet_name, column_widths, style=None, txtwrap=[])
             if cell_format:
                 # +1 because enumerate is zero-based and Excel rows are 1-based
                 worksheet.write(row_num + 1, dataframe.columns.get_loc('Result'), value, cell_format)
+
     elif style == 'severity':
         # Define custom formats
         low_format = excel_book.add_format({'bg_color': '#ffff00'})
@@ -1615,6 +1748,22 @@ def WriteDataFrame(dataframe, sheet_name, column_widths, style=None, txtwrap=[])
                 # +1 because enumerate is zero-based and Excel rows are 1-based
                 worksheet.write(row_num + 1, dataframe.columns.get_loc('Severity'), value, cell_format)
 
+    elif style == 'tls':
+        medium_format = excel_book.add_format({'bg_color': '#f79646', 'align': 'center', 'font_name': 'Webdings'})
+        good_format = excel_book.add_format({'bg_color': '#92d050', 'align': 'center', 'font_name': 'Webdings'})
+        for column_title in dataframe:
+            for row_num, value in enumerate(dataframe[column_title]):
+                if value == 'a':
+                    cell_format = good_format
+                elif value == 'r':
+                    cell_format = medium_format
+                else:
+                    cell_format = None
+
+                # Apply the format if one was determined
+                if cell_format:
+                    # +1 because enumerate is zero-based and Excel rows are 1-based
+                    worksheet.write(row_num + 1, dataframe.columns.get_loc(column_title), value, cell_format)
 
 
 def CloseExcelWriter(writer):
@@ -1656,6 +1805,7 @@ unquoted         = Unquoted service paths and their weak permissions
 unsupported      = Unsupported operating systems
 winpatches       = Missing Microsoft security patches
 credpatch        = Extract all hosts that had a Cred Patch audit done
+tls              = Extract TlS issue
 '''))
 
 # Keep a timer to keep an eye on performance
@@ -1790,15 +1940,17 @@ else:
             extractUnsupportedOperatingSystems() ; continue
         if 'winpatches' == module.lower():
             extractMSPatches() ; continue
-        if ('search' == module.lower()):
+        if 'search' == module.lower():
             if (args.keyword is not None):
-                searchPlugins(args.keyword)
+                searchPlugins(args.keyword); continue
             else: 
                 raise ValueError("Search module requires a keyword")
-        if ('credpatch' == module.lower()):
-            extractCredPatch()
-        else:
-            print(f'WARN - provided module "{module}" is invalid. Omitting') 
+        if 'credpatch' == module.lower():
+            extractCredPatch(); continue
+        if 'tls' == module.lower():
+            extractTLSWeaknesses(); continue
+
+        print(f'WARN - provided module "{module}" is invalid. Omitting')
 
 toc = time.perf_counter()
 print(f'COMPLETED! Output can be found in {os.getcwd()}{os.sep}{args.out} Total time taken: {toc - tic:0.4f} seconds')
