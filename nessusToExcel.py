@@ -1697,7 +1697,7 @@ def WriteDataFrame(dataframe, sheet_name, column_widths, style=None, txtwrap=[])
         # Add text wrap to specified cols
         # It should be possible to do it row by row but didn't manage to make it work
         for column in txtwrap:
-            txtwrap_format = excel_book.add_format({'text_wrap': True})
+            txtwrap_format = excel_book.add_format({'text_wrap': True, 'valign': 'top'})
             for row_num, value in enumerate(dataframe[column]):
                 # +1 because enumerate is zero-based and Excel rows are 1-based
                 worksheet.write(row_num + 1, dataframe.columns.get_loc(column), value, txtwrap_format)
