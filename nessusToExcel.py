@@ -1074,7 +1074,7 @@ def extractUnquotedServicePaths():
                 if len(line) > 2 and 'Nessus found the following' not in line:
                     service,path = line.split(':',1)
                     # Write to Excel worksheet
-                    if 'C:\Program Files'.lower() in path.lower():
+                    if "C:\\Program Files".lower() in path.lower():
                         exploitability = 'Low'
                     else:
                         exploitability = 'High'
