@@ -36,6 +36,8 @@ import pandas as pd
 #                   - Custom aggregation of results for 'Outdated Software' (more to come)
 #                   - Automatically text wrap.
 # Credit @lapolis
+# v1.7 - 06/03/2024 - Added TLS module
+# Credit @lapolis
 
 # STANDARDS
 # Columns order - Hostname / IP Address / Other (Except for hosts which will be in reporter format of IP / Hostname / OS)
@@ -68,20 +70,21 @@ def extractAll():
     extractWeakServicePermissions()
     extractWeakSSHAlgorithms()
     extractCredPatch()
+    extractTLSWeaknesses()
 
 # Extract system information
 def extractHosts():
     tic = time.perf_counter()
-    
+
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
     columns = ['IP Address',
                'Hostname',
                'Operating System']
     column_widths = [15, 40, 60]
     df = pd.DataFrame(columns=columns)
-    
+
     with open("Host Information.txt", "w") as txt_file:
-        
+
         for report_host in nfr.scan.report_hosts(root):
             report_ip = nfr.host.resolved_ip(report_host)
             report_host_os = nfr.host.detected_os(report_host)
@@ -98,7 +101,7 @@ def extractHosts():
                    report_fqdn,
                    report_host_os]
             df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
-    
+
     txt_file.close()
 
     if not df.empty:
@@ -130,10 +133,10 @@ def extractIssues():
     for report_host in nfr.scan.report_hosts(root):
         report_ip = nfr.host.resolved_ip(report_host)
         report_fqdn = Hosts[report_ip]
-        
+
         report_items_per_host = nfr.host.report_items(report_host)
         for report_item in report_items_per_host:
-            
+
             risk_factor = nfr.plugin.report_item_value(report_item, 'risk_factor')
 
             if risk_factor != "None":
@@ -179,7 +182,7 @@ def extractCompliance():
     # Will need to assess each plugin for its family
     for report_host in nfr.scan.report_hosts(root):
         all_plugins = nfr.host.report_items(report_host)
-        
+
         for plugin in all_plugins:
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
@@ -253,20 +256,20 @@ def extractDatabases():
         if not (re.match('[Cc]heck Audit Trail', unauth_mssql_plugin)) or not (re.match('[Cc]heck Audit Trail', auth_mssql_plugin)):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
-                    
+
             report_items_per_host = nfr.host.report_items(report_host)
             for report_item in report_items_per_host:
                 lines = None
-                
+
                 plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
-                
+
                 if plugin_id == 10144:
                     lines = unauth_mssql_plugin.splitlines()
                     mssql_port = nfr.plugin.report_item_value(report_item, 'port')
                 if plugin_id == 11217:
                     lines = auth_mssql_plugin.splitlines()
                     mssql_port = '1433'
-                
+
                 if lines is not None:
                     for line in lines:
                         if ('Version' in line) and ('Recommended' not in line):
@@ -300,10 +303,10 @@ def extractDatabases():
         if not re.match('[Cc]heck Audit Trail', mysql_plugin):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
-                    
+
             report_items_per_host = nfr.host.report_items(report_host)
             for report_item in report_items_per_host:
-                
+
                 plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
                 if plugin_id == 10719:
                     lines = mysql_plugin.splitlines()
@@ -339,10 +342,10 @@ def extractDatabases():
         if not re.match('[Cc]heck Audit Trail', postgres_plugin):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
-                    
+
             report_items_per_host = nfr.host.report_items(report_host)
             for report_item in report_items_per_host:
-                
+
                 plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
                 if plugin_id == 26024:
 
@@ -362,10 +365,10 @@ def extractDatabases():
         if not re.match('[Cc]heck Audit Trail', oracle_plugin):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
-                    
+
             report_items_per_host = nfr.host.report_items(report_host)
             for report_item in report_items_per_host:
-                
+
                 plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
                 if plugin_id == 22073:
 
@@ -392,10 +395,10 @@ def extractDatabases():
         if not re.match('[Cc]heck Audit Trail', mongo_plugin):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
-                    
+
             report_items_per_host = nfr.host.report_items(report_host)
             for report_item in report_items_per_host:
-                
+
                 plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
                 if plugin_id == 65914:
 
@@ -410,7 +413,7 @@ def extractDatabases():
 
                             if mongo_one: mongo_eol = "01 September 2012"
                             if mongo_two: mongo_eol  = "01 October 2016"
-                            if mongo_three: mongo_eol = "30 April 2021" 
+                            if mongo_three: mongo_eol = "30 April 2021"
 
                     mongo_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
                     mongo_port = nfr.plugin.report_item_value(report_item, 'port')
@@ -460,7 +463,7 @@ def extractDefaultHTTP():
 
         report_items_per_host = nfr.host.report_items(report_host)
         for report_item in report_items_per_host:
-            
+
             plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
             if plugin_id == 11422:
                 http_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
@@ -508,7 +511,7 @@ def extractHTTPServers():
 
         report_items_per_host = nfr.host.report_items(report_host)
         for report_item in report_items_per_host:
-            
+
             plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
             if plugin_id == 10107:
                 http_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
@@ -555,7 +558,7 @@ def extractLastUpdated():
             report_fqdn = Hosts[report_ip]
 
             lines = plugin_93962.splitlines()
-            update_level = "" 
+            update_level = ""
             for line in lines:
                 if 'Latest effective update level : ' in line:
                     update_level = line.replace(' Latest effective update level : ','')
@@ -574,14 +577,14 @@ def extractLastUpdated():
         if not re.match('[Cc]heck Audit Trail', plugin_62042):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
-            
-            lines = plugin_62042.splitlines() 
+
+            lines = plugin_62042.splitlines()
             for line in lines:
                 if 'Installed on:' in line:
                     patch_date = line.split(',', 1)
                     patch = patch_date[0]
                     date = patch_date[-1].split()
-                        
+
                     # Write to Excel worksheet
                     row = [report_fqdn,
                            report_ip,
@@ -640,7 +643,7 @@ def extractMSPatches():
                 exploit_exists_debugging = True
 
             if cve_list:
-                cve_text = '\n'.join(cve_list)
+                cve_text = '\n'.join([cve for cve in cve_list if cve])
             else:
                 cve_text = None
 
@@ -730,7 +733,7 @@ def extractLinuxPatches():
                     exploit_exists_debugging = True
 
                 if cve_list:
-                    cve_text = '\n'.join(cve_list)
+                    cve_text = '\n'.join([cve for cve in cve_list if cve])
                 else:
                     cve_text = None
 
@@ -750,6 +753,7 @@ def extractLinuxPatches():
                                latestver[-1].strip(),
                                exploit_exists,
                                cve_text]
+
                         df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
                         # leaving this one here for potential debugging
@@ -785,7 +789,7 @@ def extractOpenPorts():
 
         report_items_per_host = nfr.host.report_items(report_host)
         for report_item in report_items_per_host:
-            
+
             plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
 
             # Unauth SYN, TCP & UDP + Auth SSH * Netstat plugin outputs
@@ -829,10 +833,10 @@ def extractInstalledSoftware():
     for report_host in nfr.scan.report_hosts(root):
         report_ip = nfr.host.resolved_ip(report_host)
         report_fqdn = Hosts[report_ip]
-        
+
         # Windows (HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall HKLM\SOFTWARE\Microsoft\Updates)
         plugin_20811 = nfr.plugin.plugin_output(root, report_host, '20811')
-        
+
         if not re.match('[Cc]heck Audit Trail', plugin_20811):
             lines = plugin_20811.splitlines()
             for line in lines:
@@ -846,7 +850,7 @@ def extractInstalledSoftware():
                            report_ip,
                            line.strip()]
                     df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
-        
+
         # Linux (rpm -qa etc.)
         plugin_22869 = nfr.plugin.plugin_output(root, report_host, '22869')
 
@@ -911,7 +915,7 @@ def extractOutdatedSoftware():
                 cve_list = nfr.plugin.report_item_values(plugin, 'cve')
 
                 if cve_list:
-                    cve_text = '\n'.join(cve_list)
+                    cve_text = '\n'.join([cve for cve in cve_list if cve])
                 else:
                     cve_text = None
 
@@ -1016,7 +1020,7 @@ def extractUnencryptedProtocols():
 
         report_items_per_host = nfr.host.report_items(report_host)
         for report_item in report_items_per_host:
-            
+
             plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
             if (plugin_id == 10092 or plugin_id == 10281 or plugin_id == 54582 or plugin_id == 11819 or plugin_id == 35296
             or plugin_id == 87733 or plugin_id == 10203 or plugin_id == 10205 or plugin_id == 10061 or plugin_id == 10198
@@ -1038,7 +1042,7 @@ def extractUnencryptedProtocols():
         if not args.noclean:
             df = df.drop_duplicates()
         WriteDataFrame(df, 'Unencrypted Protocols', column_widths)
-    
+
     toc = time.perf_counter()
     if args.verbose:
         print(f'DEBUG - Completed Unencrypted Protocols. {len(df)} rows took {toc - tic:0.4f} seconds')
@@ -1057,7 +1061,7 @@ def extractUnquotedServicePaths():
     df = pd.DataFrame(columns=columns)
 
     for report_host in nfr.scan.report_hosts(root):
-                
+
         plugin_63155 = nfr.plugin.plugin_outputs(root, report_host, '63155')
         if not re.findall(r'[Cc]heck [aA]udit [tT]rail', plugin_63155) and 'not enabled' not in plugin_63155:
             report_ip = nfr.host.resolved_ip(report_host)
@@ -1070,7 +1074,7 @@ def extractUnquotedServicePaths():
                 if len(line) > 2 and 'Nessus found the following' not in line:
                     service,path = line.split(':',1)
                     # Write to Excel worksheet
-                    if 'C:\Program Files'.lower() in path.lower():
+                    if "C:\\Program Files".lower() in path.lower():
                         exploitability = 'Low'
                     else:
                         exploitability = 'High'
@@ -1091,7 +1095,7 @@ def extractUnquotedServicePaths():
     if args.verbose:
         print(f'DEBUG - Completed Unquoted Service Paths. {len(df)} rows took {toc - tic:0.4f} seconds')
 
-# Identify all unsupported operating systems 
+# Identify all unsupported operating systems
 def extractUnsupportedOperatingSystems():
     tic = time.perf_counter()
 
@@ -1216,11 +1220,11 @@ def extractWeakServicePermissions():
 
     for report_host in nfr.scan.report_hosts(root):
         report_ip = nfr.host.resolved_ip(report_host)
-        
+
         plugin_65057 = nfr.plugin.plugin_outputs(root, report_host, '65057')
         if not re.match('[Cc]heck Audit Trail', plugin_65057):
             report_fqdn = Hosts[report_ip]
-            
+
             items = plugin_65057.split("\n\n")
             for item in items:
                 lines = item.splitlines()
@@ -1270,20 +1274,23 @@ def extractWeakSSHAlgorithms():
                'Weak Encryption Algorithm',
                'Weak Key Exchange Algorithm',
                'Weak Cipher Block Chaining Cipher',
-               'Weak Message Authentication Code Algorithm']
-    column_widths = [40, 15, 10, 6, 27, 33, 33, 44]
+               'Weak Message Authentication Code Algorithm',
+               'Password Authentication Accepted']
+    column_widths = [40, 15, 10, 6, 27, 33, 33, 44, 33]
     df = pd.DataFrame(columns=columns)
-    
+
     for report_host in nfr.scan.report_hosts(root):
         # Initialize some variables
         enc_algorithms = []; keyex_algorithms = []; cbc_algorithms = []; mac_algorithms = []
-        
+
         enc_plugin = nfr.plugin.plugin_outputs(root, report_host, '90317')
         keyex_plugin = nfr.plugin.plugin_outputs(root, report_host, '153953')
         cbc_plugin = nfr.plugin.plugin_outputs(root, report_host, '70658')
         mac_plugin = nfr.plugin.plugin_outputs(root, report_host, '71049')
+        passwd_plugin = nfr.plugin.plugin_outputs(root, report_host, '149334')
+        passwd_accepted = 'No'
 
-        if not (re.match('[Cc]heck Audit Trail', enc_plugin)) or not (re.match('[Cc]heck Audit Trail', keyex_plugin)) or not (re.match('[Cc]heck Audit Trail', cbc_plugin)) or not (re.match('[Cc]heck Audit Trail', mac_plugin)):
+        if not (re.match('[Cc]heck Audit Trail', enc_plugin)) or not (re.match('[Cc]heck Audit Trail', keyex_plugin)) or not (re.match('[Cc]heck Audit Trail', cbc_plugin)) or not (re.match('[Cc]heck Audit Trail', mac_plugin) or not (re.match('[Cc]heck Audit Trail', passwd_plugin))):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
 
@@ -1292,7 +1299,7 @@ def extractWeakSSHAlgorithms():
 
                 plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
                 # check enc, kek, cbc or mac 
-                if plugin_id == 90317 or plugin_id == 153953 or plugin_id == 70658 or plugin_id == 71049:
+                if plugin_id == 90317 or plugin_id == 153953 or plugin_id == 70658 or plugin_id == 71049 or plugin_id == 149334:
                     # Weak encryption ciphers
                     if plugin_id == 90317:
 
@@ -1303,17 +1310,17 @@ def extractWeakSSHAlgorithms():
                                     enc_algorithms.append(enc_algorithm.strip())
 
                     # Weak key exchange ciphers
-                    if plugin_id == 153953: 
-                        
+                    if plugin_id == 153953:
+
                         keyex_output = keyex_plugin.splitlines()
                         for keyex_algorithm in keyex_output:
                             if 'The following weak key exchange' not in keyex_algorithm and not re.match('[Cc]heck Audit Trail', keyex_algorithm) and len(keyex_algorithm) != 0:
-                                if keyex_algorithm.strip() not in keyex_algorithms: 
+                                if keyex_algorithm.strip() not in keyex_algorithms:
                                     keyex_algorithms.append(keyex_algorithm.strip())
 
                     # Weak CBC ciphers
-                    if plugin_id == 70658: 
-                        
+                    if plugin_id == 70658:
+
                         cbc_output = cbc_plugin.splitlines()
                         for cbc_algorithm in cbc_output:
                             if 'The following' not in cbc_algorithm and 'are supported :' not in cbc_algorithm and not re.match('[Cc]heck Audit Trail', cbc_algorithm) and len(cbc_algorithm) != 0:
@@ -1321,14 +1328,17 @@ def extractWeakSSHAlgorithms():
                                     cbc_algorithms.append(cbc_algorithm.strip())
 
                     # Weak MAC ciphers
-                    if plugin_id == 71049: 
+                    if plugin_id == 71049:
                         mac_output = mac_plugin.splitlines()
 
                         for mac_algorithm in mac_output:
                             if 'The following' not in mac_algorithm and 'are supported :' not in mac_algorithm and not re.match('[Cc]heck Audit Trail', mac_algorithm) and len(mac_algorithm) != 0:
                                 if mac_algorithm.strip() not in mac_algorithms:
                                     mac_algorithms.append(mac_algorithm.strip())
-                    
+
+                    if plugin_id == 149334:
+                        passwd_accepted = "Yes"
+
                     ssh_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
                     ssh_port = nfr.plugin.report_item_value(report_item, 'port')
 
@@ -1359,7 +1369,8 @@ def extractWeakSSHAlgorithms():
                            ssh_protocol,
                            ssh_port,
                            enc, kek,
-                           cbc, mac]
+                           cbc, mac,
+                           passwd_accepted]
                     df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
                     r += 1
 
@@ -1373,11 +1384,12 @@ def extractWeakSSHAlgorithms():
             # define aggregation functions for each column
             # TODO: define a function for the repeated methods
             aggregations = {
-                'Hostname': lambda x: next((i for i in reversed(x.tolist()) if i), None),                     # Keep the first non-empty
-                'Weak Encryption Algorithm': lambda x: '\n'.join(i for i in x.unique() if i),                 # Concat with \n
-                'Weak Key Exchange Algorithm': lambda x: '\n'.join(i for i in x.unique() if i),               # Concat with \n
-                'Weak Cipher Block Chaining Cipher': lambda x: '\n'.join(i for i in x.unique() if i),         # Concat with \n
-                'Weak Message Authentication Code Algorithm': lambda x: '\n'.join(i for i in x.unique() if i) # Concat with \n
+                'Hostname': lambda x: next((i for i in reversed(x.tolist()) if i), None),                       # Keep the first non-empty
+                'Weak Encryption Algorithm': lambda x: '\n'.join(i for i in x.unique() if i),                   # Concat with \n
+                'Weak Key Exchange Algorithm': lambda x: '\n'.join(i for i in x.unique() if i),                 # Concat with \n
+                'Weak Cipher Block Chaining Cipher': lambda x: '\n'.join(i for i in x.unique() if i),           # Concat with \n
+                'Weak Message Authentication Code Algorithm': lambda x: '\n'.join(i for i in x.unique() if i),  # Concat with \n
+                'Password Authentication Accepted': lambda x: next((i for i in reversed(x.tolist()) if i), None)# Keep the first non-empty
             }
             df = df.groupby(['IP Address', 'Protocol', 'Port'], as_index=False).agg(aggregations)
             df = df[columns]
@@ -1415,7 +1427,7 @@ def extractCredPatch():
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
             report_host_os = nfr.host.detected_os(report_host)
-            
+
             if (report_host_os is None or report_host_os.count('\n') > 0):
                 report_host_os = ""
 
@@ -1430,7 +1442,7 @@ def extractCredPatch():
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
             report_host_os = nfr.host.detected_os(report_host)
-            
+
             if (report_host_os is None or report_host_os.count('\n') > 0):
                 report_host_os = ""
 
@@ -1449,6 +1461,132 @@ def extractCredPatch():
     toc = time.perf_counter()
     if args.verbose:
         print(f'DEBUG - Completed WMI Available. {len(df)} rows took {toc - tic:0.4f} seconds')
+
+
+# Extract all TLS issue
+def extractTLSWeaknesses():
+    tic = time.perf_counter()
+
+    # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
+    columns = ['Hostname',
+               'IP Address',
+               'Protocol',
+               'Port',
+               'SSL Certificate Cannot Be Trusted',
+               'SSL Certificate Expiry',
+               'SSL Self-Signed Certificate',
+               'Certificate chain keys less than 2048 bits in lengt',
+               'NULL ciphers suites accepte',
+               'Anonymous cipher suites accepted',
+               'Weak strength ciphers accepted',
+               'RC4 cipher suites accepted',
+               'Plaintext injection (insecure renegotiation)',
+               'Susceptibility to Heartbleed attack (insufficient patching)',
+               'Susceptibility to CRIME attack (HTTP compression)',
+               'Susceptibility BEAST attack (CBC ciphers)',
+               'Change Cipher Spec Injection (insufficient patching)',
+               'Susceptibility to SSL POODLE attack (SSL 3.0 enabled)',
+               'Susceptibility to TLS POODLE attack (insufficient patching)',
+               'Susceptibility to DROWN attack (SSL 2.0 enabled)',
+               'Susceptibility to FREAK attack (export grade RSA keys)',
+               'OpenSSL Padding Oracle Attack',
+               'Susceptibility to SWEET32 attack (supports 64 bit block ciphers)',
+               'Susceptibility to LOGJAM attack (weak DH key exchange supported)',
+               'Certificate signed with a weak hashing algorithm',
+               'Susceptibility to LUCKY13 attack (supports CBC encryption cipher suites)',
+               'Protocols with known weaknesses allowed']
+
+    column_widths = [40, 15, 10, 6, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25]
+    df = pd.DataFrame(columns=columns)
+
+    # match the plugin ID with the row[] column index to modify
+    plugins = {'51192': 4,  # 'SSL Certificate Cannot Be Trusted',
+               '15901': 5,  # 'SSL Certificate Expiry',
+               '57582': 6,  # 'SSL Self-Signed Certificate',
+               '69551': 7,  # 'Certificate chain keys less than 2048 bits in lenght',
+               '66848': 8,  # 'NULL ciphers suites accepted',
+               '31705': 9,  # 'Anonymous cipher suites accepted',
+               '26928': 10,  # 'Weak strength ciphers accepted',
+               '65821': 11,  # 'RC4 cipher suites accepted',
+               '42880': 12,  # 'Plaintext injection (insecure renegotiation)',
+               '73412': 13,  # 'Susceptibility to Heartbleed attack (insufficient patching)',
+               '62565': 14,  # 'Susceptibility to CRIME attack (HTTP compression)',
+               '58751': 15,  # 'Susceptibility BEAST attack (CBC ciphers)',
+               '74326': 16,  # 'Change Cipher Spec Injection (insufficient patching)',
+               '78479': 17,  # 'Susceptibility to SSL POODLE attack (SSL 3.0 enabled)',
+               '80035': 18,  # 'Susceptibility to TLS POODLE attack (insufficient patching)',
+               '89058': 19,  # 'Susceptibility to DROWN attack (SSL 2.0 enabled)',
+               '81606': 20,  # 'Susceptibility to FREAK attack (export grade RSA keys)',
+               '91572': 21,  # 'OpenSSL Padding Oracle Attack',
+               '42873': 22,  # 'Susceptibility to SWEET32 attack (supports 64 bit block ciphers)',
+               '94437': 22,  # 'Susceptibility to SWEET32 attack (supports 64 bit block ciphers)',
+               '83875': 23,  # 'Susceptibility to LOGJAM attack (weak DH key exchange supported)',
+               '95631': 24,  # 'Certificate signed with a weak hashing algorithm',
+               '70544': 25,  # 'Susceptibility to LUCKY13 attack (supports CBC encryption cipher suites)',
+               '20007': 26,  # 'Protocols with known weaknesses allowed',
+               '104743': 26}  # 'Protocols with known weaknesses allowed'
+
+    # this will be used to store all issues
+    host_dict = {}
+    for report_host in nfr.scan.report_hosts(root):
+        report_ip = nfr.host.resolved_ip(report_host)
+
+
+        report_items_per_host = nfr.host.report_items(report_host)
+        for report_item in report_items_per_host:
+
+            plugin_id = str(nfr.plugin.report_item_value(report_item, 'pluginID'))
+            if plugin_id in plugins:
+                row = [None] * len(columns)
+                # mark it as vulnerable
+                row[ plugins[plugin_id] ] = 'r'
+                report_fqdn = Hosts[report_ip]
+                report_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                report_port = nfr.plugin.report_item_value(report_item, 'port')
+
+                # mark all the 0s as not vulnerable
+                row = [value if value is not None else 'a' for value in row]
+
+                # add the host info
+                row[0] = report_fqdn
+                row[1] = report_ip
+                row[2] = report_protocol
+                row[3] = report_port
+
+                # add the row
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+
+
+    # Writing the DataFrame
+    if not df.empty:
+        if not args.noclean:
+            df = df.drop_duplicates()
+
+            # congregate all findings
+            # define aggregation functions for each column
+            # TODO: define a function for the repeated methods
+            aggregations = {
+                'Hostname': lambda x: next((i for i in reversed(x.tolist()) if i), None),  # Keep the first non-empty
+            }
+            exclude_columns = ['IP Address', 'Protocol', 'Port', 'Hostname']
+
+            # Apply a default aggregation logic to all other columns
+            # This is used to keep the vulnerable mark
+            for column in df.columns:
+                if column not in exclude_columns:
+                    aggregations[column] = lambda x: 'r' if 'r' in x.values else 'a'
+
+            df = df.groupby(['IP Address', 'Protocol', 'Port'], as_index=False).agg(aggregations)
+            df = df[columns]
+
+            # drop all columns that has no issues
+            df = df.drop(columns=[col for col in df if (df[col] == 'a').all()])
+
+        WriteDataFrame(df, 'TLS Issues', column_widths[:len(df.columns)], style='tls')
+
+    toc = time.perf_counter()
+    if args.verbose:
+        print(f'DEBUG - Completed TLS Issues. {len(df)} rows took {toc - tic:0.4f} seconds')
 
 # Search plugins by keyword to pull out all relevant info
 def searchPlugins(keyword):
@@ -1512,7 +1650,7 @@ def GenerateHostDictionary():
                     if 'DNS Computer Name' in line:
                         report_fqdn = line.split(':', 1)
                         report_fqdn = report_fqdn[-1].strip()
-        
+
         if report_fqdn is None:
             # Then try hostname plugin
             if not re.match('[Cc]heck Audit Trail', plugin_55472):
@@ -1521,13 +1659,16 @@ def GenerateHostDictionary():
                     if 'Hostname' in line:
                         report_fqdn = line.split(':', 1)
                         report_fqdn = report_fqdn[-1].strip()
-        
+
         if report_fqdn is None:
             # If we still haven't obtained hostname, use placeholder
             report_fqdn = None
 
         report_ip = nfr.host.resolved_ip(report_host)
-        Hosts[report_ip] = report_fqdn
+        if report_ip not in Hosts or (report_fqdn and not Hosts[report_ip]):
+            # Set the key value only if the key does not exist
+            # or if report_fqdn is non-empty and Hosts[report_ip] is currently empty
+            Hosts[report_ip] = report_fqdn
 
     toc = time.perf_counter()
 
@@ -1550,71 +1691,91 @@ def WriteDataFrame(dataframe, sheet_name, column_widths, style=None, txtwrap=[])
     # https://xlsxwriter.readthedocs.io/worksheet.html
     dataframe.to_excel(excelWriter, sheet_name=sheet_name, index=False, na_rep='N.A')
 
-    # Get the xlsxwriter workbook and worksheet objects
-    if style or txtwrap:
-        excel_book = excelWriter.book
-        txtwrap_format = excel_book.add_format({'text_wrap': True})
-
     # Access the xlsxwriter workbook and worksheet objects
     worksheet = excelWriter.sheets[sheet_name]
 
     # Set the column widths
     for i, width in enumerate(column_widths):
-        if dataframe.columns[i-1] in txtwrap:
-            worksheet.set_column(i, i, width, txtwrap_format)
-        else:
-            worksheet.set_column(i, i, width)
+        worksheet.set_column(i, i, width)
 
+    # Get the xlsxwriter workbook and worksheet objects
+    if style or txtwrap:
+        excel_book = excelWriter.book
 
-    # Adding colors in the compliance 'Result' column
-    if style == 'compliance':
-        # Define custom formats
-        good_format = excel_book.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
-        bad_format = excel_book.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
-        neutral_format = excel_book.add_format({'bg_color': '#FFEB9C', 'font_color': '#9C6500'})
-
-        # Iterate over the 'Result' column
-        for row_num, value in enumerate(dataframe['Result']):
-            # Determine the format based on the cell value
-            if value == 'FAILED':
-                cell_format = bad_format
-            elif value == 'PASSED':
-                cell_format = good_format
-            elif value == 'WARNING':
-                cell_format = neutral_format
-            else:
-                cell_format = None
-
-            # Apply the format if one was determined
-            if cell_format:
+        # Add text wrap to specified cols
+        # It should be possible to do it row by row but didn't manage to make it work
+        for column in txtwrap:
+            txtwrap_format = excel_book.add_format({'text_wrap': True, 'valign': 'top'})
+            for row_num, value in enumerate(dataframe[column]):
                 # +1 because enumerate is zero-based and Excel rows are 1-based
-                worksheet.write(row_num + 1, dataframe.columns.get_loc('Result'), value, cell_format)
-    elif style == 'severity':
-        # Define custom formats
-        low_format = excel_book.add_format({'bg_color': '#ffff00'})
-        medium_format = excel_book.add_format({'bg_color': '#f79646'})
-        high_format = excel_book.add_format({'bg_color': '#ff0000'})
-        critical_format = excel_book.add_format({'bg_color': '#954eca'})
+                worksheet.write(row_num + 1, dataframe.columns.get_loc(column), value, txtwrap_format)
 
-        # Iterate over the 'Result' column
-        for row_num, value in enumerate(dataframe['Severity']):
-            # Determine the format based on the cell value
-            if value == 'Critical':
-                cell_format = critical_format
-            elif value == 'High':
-                cell_format = high_format
-            elif value == 'Medium':
-                cell_format = medium_format
-            elif value == 'Low':
-                cell_format = low_format
-            else:
-                cell_format = None
+        # Adding colors in the compliance 'Result' column
+        if style == 'compliance':
+            # Define custom formats
+            good_format = excel_book.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
+            bad_format = excel_book.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
+            neutral_format = excel_book.add_format({'bg_color': '#FFEB9C', 'font_color': '#9C6500'})
 
-            # Apply the format if one was determined
-            if cell_format:
-                # +1 because enumerate is zero-based and Excel rows are 1-based
-                worksheet.write(row_num + 1, dataframe.columns.get_loc('Severity'), value, cell_format)
+            # Iterate over the 'Result' column
+            for row_num, value in enumerate(dataframe['Result']):
+                # Determine the format based on the cell value
+                if value == 'FAILED':
+                    cell_format = bad_format
+                elif value == 'PASSED':
+                    cell_format = good_format
+                elif value == 'WARNING':
+                    cell_format = neutral_format
+                else:
+                    cell_format = None
 
+                # Apply the format if one was determined
+                if cell_format:
+                    # +1 because enumerate is zero-based and Excel rows are 1-based
+                    worksheet.write(row_num + 1, dataframe.columns.get_loc('Result'), value, cell_format)
+
+        elif style == 'severity':
+            # Define custom formats
+            low_format = excel_book.add_format({'bg_color': '#ffff00'})
+            medium_format = excel_book.add_format({'bg_color': '#f79646'})
+            high_format = excel_book.add_format({'bg_color': '#ff0000'})
+            critical_format = excel_book.add_format({'bg_color': '#954eca'})
+
+            # Iterate over the 'Result' column
+            for row_num, value in enumerate(dataframe['Severity']):
+                # Determine the format based on the cell value
+                if value == 'Critical':
+                    cell_format = critical_format
+                elif value == 'High':
+                    cell_format = high_format
+                elif value == 'Medium':
+                    cell_format = medium_format
+                elif value == 'Low':
+                    cell_format = low_format
+                else:
+                    cell_format = None
+
+                # Apply the format if one was determined
+                if cell_format:
+                    # +1 because enumerate is zero-based and Excel rows are 1-based
+                    worksheet.write(row_num + 1, dataframe.columns.get_loc('Severity'), value, cell_format)
+
+        elif style == 'tls':
+            medium_format = excel_book.add_format({'bg_color': '#f79646', 'align': 'center', 'font_name': 'Webdings'})
+            good_format = excel_book.add_format({'bg_color': '#92d050', 'align': 'center', 'font_name': 'Webdings'})
+            for column_title in dataframe:
+                for row_num, value in enumerate(dataframe[column_title]):
+                    if value == 'a':
+                        cell_format = good_format
+                    elif value == 'r':
+                        cell_format = medium_format
+                    else:
+                        cell_format = None
+
+                    # Apply the format if one was determined
+                    if cell_format:
+                        # +1 because enumerate is zero-based and Excel rows are 1-based
+                        worksheet.write(row_num + 1, dataframe.columns.get_loc(column_title), value, cell_format)
 
 
 def CloseExcelWriter(writer):
@@ -1656,6 +1817,7 @@ unquoted         = Unquoted service paths and their weak permissions
 unsupported      = Unsupported operating systems
 winpatches       = Missing Microsoft security patches
 credpatch        = Extract all hosts that had a Cred Patch audit done
+tls              = Extract TlS issue
 '''))
 
 # Keep a timer to keep an eye on performance
@@ -1754,12 +1916,12 @@ if "all" in args.module:
 else:
     if args.verbose:
         print(f'DEBUG - Modules selected: {(argvars["module"])}')
-    
+
     for module in argvars["module"]:
         if 'compliance' == module.lower():
             extractCompliance() ; continue
         if 'databases' == module.lower():
-            extractDatabases() ; continue 
+            extractDatabases() ; continue
         if 'defaulthttp' == module.lower():
             extractDefaultHTTP() ; continue
         if 'hosts' == module.lower():
@@ -1790,15 +1952,17 @@ else:
             extractUnsupportedOperatingSystems() ; continue
         if 'winpatches' == module.lower():
             extractMSPatches() ; continue
-        if ('search' == module.lower()):
+        if 'search' == module.lower():
             if (args.keyword is not None):
-                searchPlugins(args.keyword)
-            else: 
+                searchPlugins(args.keyword); continue
+            else:
                 raise ValueError("Search module requires a keyword")
-        if ('credpatch' == module.lower()):
-            extractCredPatch()
-        else:
-            print(f'WARN - provided module "{module}" is invalid. Omitting') 
+        if 'credpatch' == module.lower():
+            extractCredPatch(); continue
+        if 'tls' == module.lower():
+            extractTLSWeaknesses(); continue
+
+        print(f'WARN - provided module "{module}" is invalid. Omitting')
 
 toc = time.perf_counter()
 print(f'COMPLETED! Output can be found in {os.getcwd()}{os.sep}{args.out} Total time taken: {toc - tic:0.4f} seconds')
