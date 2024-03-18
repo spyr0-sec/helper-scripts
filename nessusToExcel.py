@@ -75,16 +75,16 @@ def extractAll():
 # Extract system information
 def extractHosts():
     tic = time.perf_counter()
-    
+
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
     columns = ['IP Address',
                'Hostname',
                'Operating System']
     column_widths = [15, 40, 60]
     df = pd.DataFrame(columns=columns)
-    
+
     with open("Host Information.txt", "w") as txt_file:
-        
+
         for report_host in nfr.scan.report_hosts(root):
             report_ip = nfr.host.resolved_ip(report_host)
             report_host_os = nfr.host.detected_os(report_host)
@@ -101,7 +101,7 @@ def extractHosts():
                    report_fqdn,
                    report_host_os]
             df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
-    
+
     txt_file.close()
 
     if not df.empty:
@@ -133,10 +133,10 @@ def extractIssues():
     for report_host in nfr.scan.report_hosts(root):
         report_ip = nfr.host.resolved_ip(report_host)
         report_fqdn = Hosts[report_ip]
-        
+
         report_items_per_host = nfr.host.report_items(report_host)
         for report_item in report_items_per_host:
-            
+
             risk_factor = nfr.plugin.report_item_value(report_item, 'risk_factor')
 
             if risk_factor != "None":
@@ -182,7 +182,7 @@ def extractCompliance():
     # Will need to assess each plugin for its family
     for report_host in nfr.scan.report_hosts(root):
         all_plugins = nfr.host.report_items(report_host)
-        
+
         for plugin in all_plugins:
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
@@ -256,20 +256,20 @@ def extractDatabases():
         if not (re.match('[Cc]heck Audit Trail', unauth_mssql_plugin)) or not (re.match('[Cc]heck Audit Trail', auth_mssql_plugin)):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
-                    
+
             report_items_per_host = nfr.host.report_items(report_host)
             for report_item in report_items_per_host:
                 lines = None
-                
+
                 plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
-                
+
                 if plugin_id == 10144:
                     lines = unauth_mssql_plugin.splitlines()
                     mssql_port = nfr.plugin.report_item_value(report_item, 'port')
                 if plugin_id == 11217:
                     lines = auth_mssql_plugin.splitlines()
                     mssql_port = '1433'
-                
+
                 if lines is not None:
                     for line in lines:
                         if ('Version' in line) and ('Recommended' not in line):
@@ -303,10 +303,10 @@ def extractDatabases():
         if not re.match('[Cc]heck Audit Trail', mysql_plugin):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
-                    
+
             report_items_per_host = nfr.host.report_items(report_host)
             for report_item in report_items_per_host:
-                
+
                 plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
                 if plugin_id == 10719:
                     lines = mysql_plugin.splitlines()
@@ -342,10 +342,10 @@ def extractDatabases():
         if not re.match('[Cc]heck Audit Trail', postgres_plugin):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
-                    
+
             report_items_per_host = nfr.host.report_items(report_host)
             for report_item in report_items_per_host:
-                
+
                 plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
                 if plugin_id == 26024:
 
@@ -365,10 +365,10 @@ def extractDatabases():
         if not re.match('[Cc]heck Audit Trail', oracle_plugin):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
-                    
+
             report_items_per_host = nfr.host.report_items(report_host)
             for report_item in report_items_per_host:
-                
+
                 plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
                 if plugin_id == 22073:
 
@@ -395,10 +395,10 @@ def extractDatabases():
         if not re.match('[Cc]heck Audit Trail', mongo_plugin):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
-                    
+
             report_items_per_host = nfr.host.report_items(report_host)
             for report_item in report_items_per_host:
-                
+
                 plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
                 if plugin_id == 65914:
 
@@ -413,7 +413,7 @@ def extractDatabases():
 
                             if mongo_one: mongo_eol = "01 September 2012"
                             if mongo_two: mongo_eol  = "01 October 2016"
-                            if mongo_three: mongo_eol = "30 April 2021" 
+                            if mongo_three: mongo_eol = "30 April 2021"
 
                     mongo_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
                     mongo_port = nfr.plugin.report_item_value(report_item, 'port')
@@ -463,7 +463,7 @@ def extractDefaultHTTP():
 
         report_items_per_host = nfr.host.report_items(report_host)
         for report_item in report_items_per_host:
-            
+
             plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
             if plugin_id == 11422:
                 http_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
@@ -511,7 +511,7 @@ def extractHTTPServers():
 
         report_items_per_host = nfr.host.report_items(report_host)
         for report_item in report_items_per_host:
-            
+
             plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
             if plugin_id == 10107:
                 http_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
@@ -558,7 +558,7 @@ def extractLastUpdated():
             report_fqdn = Hosts[report_ip]
 
             lines = plugin_93962.splitlines()
-            update_level = "" 
+            update_level = ""
             for line in lines:
                 if 'Latest effective update level : ' in line:
                     update_level = line.replace(' Latest effective update level : ','')
@@ -577,14 +577,14 @@ def extractLastUpdated():
         if not re.match('[Cc]heck Audit Trail', plugin_62042):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
-            
-            lines = plugin_62042.splitlines() 
+
+            lines = plugin_62042.splitlines()
             for line in lines:
                 if 'Installed on:' in line:
                     patch_date = line.split(',', 1)
                     patch = patch_date[0]
                     date = patch_date[-1].split()
-                        
+
                     # Write to Excel worksheet
                     row = [report_fqdn,
                            report_ip,
@@ -789,7 +789,7 @@ def extractOpenPorts():
 
         report_items_per_host = nfr.host.report_items(report_host)
         for report_item in report_items_per_host:
-            
+
             plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
 
             # Unauth SYN, TCP & UDP + Auth SSH * Netstat plugin outputs
@@ -833,10 +833,10 @@ def extractInstalledSoftware():
     for report_host in nfr.scan.report_hosts(root):
         report_ip = nfr.host.resolved_ip(report_host)
         report_fqdn = Hosts[report_ip]
-        
+
         # Windows (HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall HKLM\SOFTWARE\Microsoft\Updates)
         plugin_20811 = nfr.plugin.plugin_output(root, report_host, '20811')
-        
+
         if not re.match('[Cc]heck Audit Trail', plugin_20811):
             lines = plugin_20811.splitlines()
             for line in lines:
@@ -850,7 +850,7 @@ def extractInstalledSoftware():
                            report_ip,
                            line.strip()]
                     df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
-        
+
         # Linux (rpm -qa etc.)
         plugin_22869 = nfr.plugin.plugin_output(root, report_host, '22869')
 
@@ -1020,7 +1020,7 @@ def extractUnencryptedProtocols():
 
         report_items_per_host = nfr.host.report_items(report_host)
         for report_item in report_items_per_host:
-            
+
             plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
             if (plugin_id == 10092 or plugin_id == 10281 or plugin_id == 54582 or plugin_id == 11819 or plugin_id == 35296
             or plugin_id == 87733 or plugin_id == 10203 or plugin_id == 10205 or plugin_id == 10061 or plugin_id == 10198
@@ -1042,7 +1042,7 @@ def extractUnencryptedProtocols():
         if not args.noclean:
             df = df.drop_duplicates()
         WriteDataFrame(df, 'Unencrypted Protocols', column_widths)
-    
+
     toc = time.perf_counter()
     if args.verbose:
         print(f'DEBUG - Completed Unencrypted Protocols. {len(df)} rows took {toc - tic:0.4f} seconds')
@@ -1061,7 +1061,7 @@ def extractUnquotedServicePaths():
     df = pd.DataFrame(columns=columns)
 
     for report_host in nfr.scan.report_hosts(root):
-                
+
         plugin_63155 = nfr.plugin.plugin_outputs(root, report_host, '63155')
         if not re.findall(r'[Cc]heck [aA]udit [tT]rail', plugin_63155) and 'not enabled' not in plugin_63155:
             report_ip = nfr.host.resolved_ip(report_host)
@@ -1095,7 +1095,7 @@ def extractUnquotedServicePaths():
     if args.verbose:
         print(f'DEBUG - Completed Unquoted Service Paths. {len(df)} rows took {toc - tic:0.4f} seconds')
 
-# Identify all unsupported operating systems 
+# Identify all unsupported operating systems
 def extractUnsupportedOperatingSystems():
     tic = time.perf_counter()
 
@@ -1220,11 +1220,11 @@ def extractWeakServicePermissions():
 
     for report_host in nfr.scan.report_hosts(root):
         report_ip = nfr.host.resolved_ip(report_host)
-        
+
         plugin_65057 = nfr.plugin.plugin_outputs(root, report_host, '65057')
         if not re.match('[Cc]heck Audit Trail', plugin_65057):
             report_fqdn = Hosts[report_ip]
-            
+
             items = plugin_65057.split("\n\n")
             for item in items:
                 lines = item.splitlines()
@@ -1274,20 +1274,23 @@ def extractWeakSSHAlgorithms():
                'Weak Encryption Algorithm',
                'Weak Key Exchange Algorithm',
                'Weak Cipher Block Chaining Cipher',
-               'Weak Message Authentication Code Algorithm']
-    column_widths = [40, 15, 10, 6, 27, 33, 33, 44]
+               'Weak Message Authentication Code Algorithm',
+               'Password Authentication Accepted']
+    column_widths = [40, 15, 10, 6, 27, 33, 33, 44, 33]
     df = pd.DataFrame(columns=columns)
-    
+
     for report_host in nfr.scan.report_hosts(root):
         # Initialize some variables
         enc_algorithms = []; keyex_algorithms = []; cbc_algorithms = []; mac_algorithms = []
-        
+
         enc_plugin = nfr.plugin.plugin_outputs(root, report_host, '90317')
         keyex_plugin = nfr.plugin.plugin_outputs(root, report_host, '153953')
         cbc_plugin = nfr.plugin.plugin_outputs(root, report_host, '70658')
         mac_plugin = nfr.plugin.plugin_outputs(root, report_host, '71049')
+        passwd_plugin = nfr.plugin.plugin_outputs(root, report_host, '149334')
+        passwd_accepted = 'No'
 
-        if not (re.match('[Cc]heck Audit Trail', enc_plugin)) or not (re.match('[Cc]heck Audit Trail', keyex_plugin)) or not (re.match('[Cc]heck Audit Trail', cbc_plugin)) or not (re.match('[Cc]heck Audit Trail', mac_plugin)):
+        if not (re.match('[Cc]heck Audit Trail', enc_plugin)) or not (re.match('[Cc]heck Audit Trail', keyex_plugin)) or not (re.match('[Cc]heck Audit Trail', cbc_plugin)) or not (re.match('[Cc]heck Audit Trail', mac_plugin) or not (re.match('[Cc]heck Audit Trail', passwd_plugin))):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
 
@@ -1296,7 +1299,7 @@ def extractWeakSSHAlgorithms():
 
                 plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
                 # check enc, kek, cbc or mac 
-                if plugin_id == 90317 or plugin_id == 153953 or plugin_id == 70658 or plugin_id == 71049:
+                if plugin_id == 90317 or plugin_id == 153953 or plugin_id == 70658 or plugin_id == 71049 or plugin_id == 149334:
                     # Weak encryption ciphers
                     if plugin_id == 90317:
 
@@ -1307,17 +1310,17 @@ def extractWeakSSHAlgorithms():
                                     enc_algorithms.append(enc_algorithm.strip())
 
                     # Weak key exchange ciphers
-                    if plugin_id == 153953: 
-                        
+                    if plugin_id == 153953:
+
                         keyex_output = keyex_plugin.splitlines()
                         for keyex_algorithm in keyex_output:
                             if 'The following weak key exchange' not in keyex_algorithm and not re.match('[Cc]heck Audit Trail', keyex_algorithm) and len(keyex_algorithm) != 0:
-                                if keyex_algorithm.strip() not in keyex_algorithms: 
+                                if keyex_algorithm.strip() not in keyex_algorithms:
                                     keyex_algorithms.append(keyex_algorithm.strip())
 
                     # Weak CBC ciphers
-                    if plugin_id == 70658: 
-                        
+                    if plugin_id == 70658:
+
                         cbc_output = cbc_plugin.splitlines()
                         for cbc_algorithm in cbc_output:
                             if 'The following' not in cbc_algorithm and 'are supported :' not in cbc_algorithm and not re.match('[Cc]heck Audit Trail', cbc_algorithm) and len(cbc_algorithm) != 0:
@@ -1325,14 +1328,17 @@ def extractWeakSSHAlgorithms():
                                     cbc_algorithms.append(cbc_algorithm.strip())
 
                     # Weak MAC ciphers
-                    if plugin_id == 71049: 
+                    if plugin_id == 71049:
                         mac_output = mac_plugin.splitlines()
 
                         for mac_algorithm in mac_output:
                             if 'The following' not in mac_algorithm and 'are supported :' not in mac_algorithm and not re.match('[Cc]heck Audit Trail', mac_algorithm) and len(mac_algorithm) != 0:
                                 if mac_algorithm.strip() not in mac_algorithms:
                                     mac_algorithms.append(mac_algorithm.strip())
-                    
+
+                    if plugin_id == 149334:
+                        passwd_accepted = "Yes"
+
                     ssh_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
                     ssh_port = nfr.plugin.report_item_value(report_item, 'port')
 
@@ -1363,7 +1369,8 @@ def extractWeakSSHAlgorithms():
                            ssh_protocol,
                            ssh_port,
                            enc, kek,
-                           cbc, mac]
+                           cbc, mac,
+                           passwd_accepted]
                     df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
                     r += 1
 
@@ -1377,11 +1384,12 @@ def extractWeakSSHAlgorithms():
             # define aggregation functions for each column
             # TODO: define a function for the repeated methods
             aggregations = {
-                'Hostname': lambda x: next((i for i in reversed(x.tolist()) if i), None),                     # Keep the first non-empty
-                'Weak Encryption Algorithm': lambda x: '\n'.join(i for i in x.unique() if i),                 # Concat with \n
-                'Weak Key Exchange Algorithm': lambda x: '\n'.join(i for i in x.unique() if i),               # Concat with \n
-                'Weak Cipher Block Chaining Cipher': lambda x: '\n'.join(i for i in x.unique() if i),         # Concat with \n
-                'Weak Message Authentication Code Algorithm': lambda x: '\n'.join(i for i in x.unique() if i) # Concat with \n
+                'Hostname': lambda x: next((i for i in reversed(x.tolist()) if i), None),                       # Keep the first non-empty
+                'Weak Encryption Algorithm': lambda x: '\n'.join(i for i in x.unique() if i),                   # Concat with \n
+                'Weak Key Exchange Algorithm': lambda x: '\n'.join(i for i in x.unique() if i),                 # Concat with \n
+                'Weak Cipher Block Chaining Cipher': lambda x: '\n'.join(i for i in x.unique() if i),           # Concat with \n
+                'Weak Message Authentication Code Algorithm': lambda x: '\n'.join(i for i in x.unique() if i),  # Concat with \n
+                'Password Authentication Accepted': lambda x: next((i for i in reversed(x.tolist()) if i), None)# Keep the first non-empty
             }
             df = df.groupby(['IP Address', 'Protocol', 'Port'], as_index=False).agg(aggregations)
             df = df[columns]
@@ -1419,7 +1427,7 @@ def extractCredPatch():
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
             report_host_os = nfr.host.detected_os(report_host)
-            
+
             if (report_host_os is None or report_host_os.count('\n') > 0):
                 report_host_os = ""
 
@@ -1434,7 +1442,7 @@ def extractCredPatch():
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
             report_host_os = nfr.host.detected_os(report_host)
-            
+
             if (report_host_os is None or report_host_os.count('\n') > 0):
                 report_host_os = ""
 
@@ -1642,7 +1650,7 @@ def GenerateHostDictionary():
                     if 'DNS Computer Name' in line:
                         report_fqdn = line.split(':', 1)
                         report_fqdn = report_fqdn[-1].strip()
-        
+
         if report_fqdn is None:
             # Then try hostname plugin
             if not re.match('[Cc]heck Audit Trail', plugin_55472):
@@ -1651,7 +1659,7 @@ def GenerateHostDictionary():
                     if 'Hostname' in line:
                         report_fqdn = line.split(':', 1)
                         report_fqdn = report_fqdn[-1].strip()
-        
+
         if report_fqdn is None:
             # If we still haven't obtained hostname, use placeholder
             report_fqdn = None
@@ -1908,12 +1916,12 @@ if "all" in args.module:
 else:
     if args.verbose:
         print(f'DEBUG - Modules selected: {(argvars["module"])}')
-    
+
     for module in argvars["module"]:
         if 'compliance' == module.lower():
             extractCompliance() ; continue
         if 'databases' == module.lower():
-            extractDatabases() ; continue 
+            extractDatabases() ; continue
         if 'defaulthttp' == module.lower():
             extractDefaultHTTP() ; continue
         if 'hosts' == module.lower():
@@ -1947,7 +1955,7 @@ else:
         if 'search' == module.lower():
             if (args.keyword is not None):
                 searchPlugins(args.keyword); continue
-            else: 
+            else:
                 raise ValueError("Search module requires a keyword")
         if 'credpatch' == module.lower():
             extractCredPatch(); continue
