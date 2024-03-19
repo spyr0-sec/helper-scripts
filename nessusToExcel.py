@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-import os, re, argparse, shutil, time, textwrap
+import os, re, argparse, shutil, time, textwrap, json
 from xml.etree.ElementTree import ParseError
 import nessus_file_reader as nfr
 import pandas as pd
@@ -49,6 +49,15 @@ Hosts = {}
 root = ""
 # this is needed for custom sorting
 severity_hierarchy = {'Critical': 4, 'High': 3, 'Medium': 2, 'Low': 1}
+
+# load additional configs
+script_dir = os.path.dirname(__file__)
+config_file = os.path.join(script_dir, './additional_config.json')
+try:
+    with open(config_file, 'r') as rf:
+        additional_config = json.load(rf)
+except:
+    additional_config = None
 
 # Functions
 def extractAll():
@@ -1689,93 +1698,115 @@ def CreateExcelWriter(workBookName):
 
 def WriteDataFrame(dataframe, sheet_name, column_widths, style=None, txtwrap=[]):
     # https://xlsxwriter.readthedocs.io/worksheet.html
-    dataframe.to_excel(excelWriter, sheet_name=sheet_name, index=False, na_rep='N.A')
+    ### dataframe.to_excel(excelWriter, sheet_name=sheet_name, index=False, na_rep='N.A')
+    dataframe.to_excel(excelWriter, sheet_name=sheet_name, startrow=1, header=False, index=False, na_rep='N.A')
 
+    # Get the xlsxwriter workbook and worksheet objects
+    excel_book = excelWriter.book
     # Access the xlsxwriter workbook and worksheet objects
     worksheet = excelWriter.sheets[sheet_name]
+
+    # Get the dimensions of the dataframe.
+    (max_row, max_col) = dataframe.shape
+
+    # Create a list of column headers, to use in add_table().
+    column_settings = [{'header': column} for column in dataframe.columns]
+
+    # Add the Excel table structure. Pandas will add the data.
+    worksheet.add_table(0, 0, max_row, max_col - 1, {'columns': column_settings})
 
     # Set the column widths
     for i, width in enumerate(column_widths):
         worksheet.set_column(i, i, width)
 
-    # Get the xlsxwriter workbook and worksheet objects
-    if style or txtwrap:
-        excel_book = excelWriter.book
+    # Add text wrap to specified cols
+    # It should be possible to do it row by row but didn't manage to make it work
+    for column in txtwrap:
+        txtwrap_format = excel_book.add_format({'text_wrap': True, 'valign': 'top'})
+        for row_num, value in enumerate(dataframe[column]):
+            # +1 because enumerate is zero-based and Excel rows are 1-based
+            worksheet.write(row_num + 1, dataframe.columns.get_loc(column), value, txtwrap_format)
 
-        # Add text wrap to specified cols
-        # It should be possible to do it row by row but didn't manage to make it work
-        for column in txtwrap:
-            txtwrap_format = excel_book.add_format({'text_wrap': True, 'valign': 'top'})
-            for row_num, value in enumerate(dataframe[column]):
+    # Adding colors in the compliance 'Result' column
+    if style == 'compliance':
+        # Define custom formats
+        good_format = excel_book.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
+        bad_format = excel_book.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
+        neutral_format = excel_book.add_format({'bg_color': '#FFEB9C', 'font_color': '#9C6500'})
+
+        # Iterate over the 'Result' column
+        for row_num, value in enumerate(dataframe['Result']):
+            # Determine the format based on the cell value
+            if value == 'FAILED':
+                cell_format = bad_format
+            elif value == 'PASSED':
+                cell_format = good_format
+            elif value == 'WARNING':
+                cell_format = neutral_format
+            else:
+                cell_format = None
+
+            # Apply the format if one was determined
+            if cell_format:
                 # +1 because enumerate is zero-based and Excel rows are 1-based
-                worksheet.write(row_num + 1, dataframe.columns.get_loc(column), value, txtwrap_format)
+                worksheet.write(row_num + 1, dataframe.columns.get_loc('Result'), value, cell_format)
 
-        # Adding colors in the compliance 'Result' column
-        if style == 'compliance':
-            # Define custom formats
-            good_format = excel_book.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
-            bad_format = excel_book.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
-            neutral_format = excel_book.add_format({'bg_color': '#FFEB9C', 'font_color': '#9C6500'})
+    elif style == 'severity':
+        # Define custom formats
+        low_format = excel_book.add_format({'bg_color': '#ffff00'})
+        medium_format = excel_book.add_format({'bg_color': '#f79646'})
+        high_format = excel_book.add_format({'bg_color': '#ff0000'})
+        critical_format = excel_book.add_format({'bg_color': '#954eca'})
 
-            # Iterate over the 'Result' column
-            for row_num, value in enumerate(dataframe['Result']):
-                # Determine the format based on the cell value
-                if value == 'FAILED':
-                    cell_format = bad_format
-                elif value == 'PASSED':
+        # Iterate over the 'Result' column
+        for row_num, value in enumerate(dataframe['Severity']):
+            # Determine the format based on the cell value
+            if value == 'Critical':
+                cell_format = critical_format
+            elif value == 'High':
+                cell_format = high_format
+            elif value == 'Medium':
+                cell_format = medium_format
+            elif value == 'Low':
+                cell_format = low_format
+            else:
+                cell_format = None
+
+            # Apply the format if one was determined
+            if cell_format:
+                # +1 because enumerate is zero-based and Excel rows are 1-based
+                worksheet.write(row_num + 1, dataframe.columns.get_loc('Severity'), value, cell_format)
+
+    elif style == 'tls':
+        medium_format = excel_book.add_format({'bg_color': '#f79646', 'align': 'center', 'font_name': 'Webdings'})
+        good_format = excel_book.add_format({'bg_color': '#92d050', 'align': 'center', 'font_name': 'Webdings'})
+
+        if additional_config and 'TLS' in additional_config:
+            fw = open(os.path.join(script_dir, f'{args.out}_TLS_LIST.txt'), 'a+')
+            written_issues = []
+
+        # for each col if matching the JSON, save the issue!!
+
+        for column_title in dataframe:
+            for row_num, value in enumerate(dataframe[column_title]):
+                if value == 'a':
                     cell_format = good_format
-                elif value == 'WARNING':
-                    cell_format = neutral_format
-                else:
-                    cell_format = None
-
-                # Apply the format if one was determined
-                if cell_format:
-                    # +1 because enumerate is zero-based and Excel rows are 1-based
-                    worksheet.write(row_num + 1, dataframe.columns.get_loc('Result'), value, cell_format)
-
-        elif style == 'severity':
-            # Define custom formats
-            low_format = excel_book.add_format({'bg_color': '#ffff00'})
-            medium_format = excel_book.add_format({'bg_color': '#f79646'})
-            high_format = excel_book.add_format({'bg_color': '#ff0000'})
-            critical_format = excel_book.add_format({'bg_color': '#954eca'})
-
-            # Iterate over the 'Result' column
-            for row_num, value in enumerate(dataframe['Severity']):
-                # Determine the format based on the cell value
-                if value == 'Critical':
-                    cell_format = critical_format
-                elif value == 'High':
-                    cell_format = high_format
-                elif value == 'Medium':
+                elif value == 'r':
                     cell_format = medium_format
-                elif value == 'Low':
-                    cell_format = low_format
                 else:
                     cell_format = None
 
                 # Apply the format if one was determined
                 if cell_format:
                     # +1 because enumerate is zero-based and Excel rows are 1-based
-                    worksheet.write(row_num + 1, dataframe.columns.get_loc('Severity'), value, cell_format)
+                    worksheet.write(row_num + 1, dataframe.columns.get_loc(column_title), value, cell_format)
 
-        elif style == 'tls':
-            medium_format = excel_book.add_format({'bg_color': '#f79646', 'align': 'center', 'font_name': 'Webdings'})
-            good_format = excel_book.add_format({'bg_color': '#92d050', 'align': 'center', 'font_name': 'Webdings'})
-            for column_title in dataframe:
-                for row_num, value in enumerate(dataframe[column_title]):
-                    if value == 'a':
-                        cell_format = good_format
-                    elif value == 'r':
-                        cell_format = medium_format
-                    else:
-                        cell_format = None
+            if additional_config and 'TLS' in additional_config:
+                if column_title in additional_config["TLS"]:
+                    fw.write(f'{column_title}: {additional_config["TLS"][column_title]}\n')
 
-                    # Apply the format if one was determined
-                    if cell_format:
-                        # +1 because enumerate is zero-based and Excel rows are 1-based
-                        worksheet.write(row_num + 1, dataframe.columns.get_loc(column_title), value, cell_format)
+        if additional_config and 'TLS' in additional_config:
+            fw.close()
 
 
 def CloseExcelWriter(writer):
@@ -1965,7 +1996,7 @@ else:
         print(f'WARN - provided module "{module}" is invalid. Omitting')
 
 toc = time.perf_counter()
-print(f'COMPLETED! Output can be found in {os.getcwd()}{os.sep}{args.out} Total time taken: {toc - tic:0.4f} seconds')
+print(f'COMPLETED! Output can be found in {os.path.join(args.out)} Total time taken: {toc - tic:0.4f} seconds')
 CloseExcelWriter(excelWriter)
 
 exit()
