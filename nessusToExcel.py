@@ -1713,7 +1713,7 @@ def WriteDataFrame(dataframe, sheet_name, column_widths, style=None, txtwrap=[])
     column_settings = [{'header': column} for column in dataframe.columns]
 
     # Add the Excel table structure. Pandas will add the data.
-    worksheet.add_table(0, 0, max_row, max_col - 1, {'columns': column_settings})
+    worksheet.add_table(0, 0, max_row, max_col - 1, {'columns': column_settings, 'style': None})
 
     # Set the column widths
     for i, width in enumerate(column_widths):
