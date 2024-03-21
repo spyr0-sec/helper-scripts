@@ -1719,10 +1719,47 @@ def WriteDataFrame(dataframe, sheet_name, column_widths, style=None, txtwrap=[])
     for i, width in enumerate(column_widths):
         worksheet.set_column(i, i, width)
 
+    # grabbing default style if specified
+    if additional_config and 'STYLE' in additional_config:
+        style_conf = additional_config['STYLE']
+
+        header_format = excel_book.add_format({
+            'bg_color': style_conf['head_bg_color'],
+            'font_color': style_conf['head_font_color'],
+            'border_color': style_conf['border_color'],
+            'border': 1
+        })
+        rows_format = excel_book.add_format({
+            'bg_color': style_conf['bg_color'],
+            'font_color': style_conf['font_color'],
+            'border_color': style_conf['border_color'],
+            'border': 1
+        })
+
+        # Apply header_format to the header row
+        for col_num in range(max_col):
+            worksheet.write(0, col_num, dataframe.columns[col_num], header_format)
+
+        # Iterate over each row and column
+        for row_num in range(2, max_row + 2):
+            for col_num in range(max_col):
+                cell_value = dataframe.iloc[row_num - 2, col_num]
+                worksheet.write(row_num - 1, col_num, cell_value, rows_format)
+
     # Add text wrap to specified cols
     # It should be possible to do it row by row but didn't manage to make it work
     for column in txtwrap:
-        txtwrap_format = excel_book.add_format({'text_wrap': True, 'valign': 'top'})
+        if additional_config and 'STYLE' in additional_config:
+            txtwrap_format = excel_book.add_format({
+                'text_wrap': True,
+                'valign': 'top',
+                'bg_color': style_conf['bg_color'],
+                'font_color': style_conf['font_color'],
+                'border_color': style_conf['border_color'],
+                'border': 1
+            })
+        else:
+            txtwrap_format = excel_book.add_format({'text_wrap': True, 'valign': 'top'})
         for row_num, value in enumerate(dataframe[column]):
             # +1 because enumerate is zero-based and Excel rows are 1-based
             worksheet.write(row_num + 1, dataframe.columns.get_loc(column), value, txtwrap_format)
@@ -1826,6 +1863,7 @@ parser.add_argument('--out', '-o', required=False, help='Name of resulting Excel
 parser.add_argument('--quiet', '-q', action='store_true', help='Accept defaults during execution')
 parser.add_argument('--keyword', '-k', required=False, help='Extract all information relating to this word')
 parser.add_argument('--noclean', '-n', required=False, action='store_true', help='Do not remove duplicates and merge columns in outdatedsoftware')
+# parser.add_argument('--nostyle', '-s', required=False, action='store_true', help='Do not apply any style')
 parser.add_argument('--module', '-m', type=str, default='all',
 help=textwrap.dedent('''Comma seperated list of what data you want to extract:
 all              = Default
