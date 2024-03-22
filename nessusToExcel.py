@@ -1959,14 +1959,14 @@ if 'compliance' in argvars['module'] or "all" in args.module:
     if not os.path.isfile(backupPath):
         if args.quiet:
             if args.verbose:
-                print(f'DEBUG - Taking backup of Nessus file - {os.getcwd()}{os.sep}{backup_file}')
+                print(f'DEBUG - Taking backup of Nessus file - {backup_file}')
 
             shutil.copyfile(args.file, f'{backup_file}')
         else:
             comp_answer = input("To extract compliance output, changes to XML tags are required. While this should not cause any further issues, would you like to take a backup of your Nessus file first? [Y/n] ")
             if comp_answer == 'Y' or comp_answer == 'Yes' or comp_answer == 'y' or comp_answer == 'yes' or comp_answer == '':
                 if args.verbose:
-                    print(f'DEBUG - Taking backup of Nessus file - {os.getcwd()}{os.sep}{backup_file}')
+                    print(f'DEBUG - Taking backup of Nessus file - {backup_file}')
 
                 shutil.copyfile(args.file, f'{backup_file}')
     else:
