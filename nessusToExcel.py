@@ -38,6 +38,8 @@ import pandas as pd
 # Credit @lapolis
 # v1.7 - 06/03/2024 - Added TLS module
 # Credit @lapolis
+# v1.8 - 22/03/2024 - Added Table Style customisation
+#                   - Added TLS list of issues in a txt file
 
 # STANDARDS
 # Columns order - Hostname / IP Address / Other (Except for hosts which will be in reporter format of IP / Hostname / OS)
@@ -1712,8 +1714,11 @@ def WriteDataFrame(dataframe, sheet_name, column_widths, style=None, txtwrap=[])
     # Access the xlsxwriter workbook and worksheet objects
     worksheet = excelWriter.sheets[sheet_name]
 
-    # Get the dimensions of the dataframe.
-    (max_row, max_col) = dataframe.shape
+    # Get the dimensions of the dataframe and specific columns
+    max_row, max_col = dataframe.shape
+    result_col_index = dataframe.columns.get_loc('Result') if 'Result' in dataframe.columns else None
+    severity_col_index = dataframe.columns.get_loc('Severity') if 'Severity' in dataframe.columns else None
+    txtwrap_cols_indices = [dataframe.columns.get_loc(col) for col in txtwrap if col in dataframe.columns]
 
     # Create a list of column headers, to use in add_table().
     column_settings = [{'header': column} for column in dataframe.columns]
@@ -1725,134 +1730,136 @@ def WriteDataFrame(dataframe, sheet_name, column_widths, style=None, txtwrap=[])
     for i, width in enumerate(column_widths):
         worksheet.set_column(i, i, width)
 
-    # TODO: Single loop with all styles
-
-    # grabbing default style if specified
+    ### Setting up all styles ###
+    # Grabbing default style if specified
+    additional_style = False
     if additional_config and 'STYLE' in additional_config:
-        style_conf = additional_config['STYLE']
+        try:
+            additional_style = True
+            style_conf = additional_config['STYLE']
 
-        header_format = excel_book.add_format({
-            'bg_color': style_conf['head_bg_color'],
-            'font_color': style_conf['head_font_color'],
-            'border_color': style_conf['border_color'],
-            'border': 1
-        })
-        rows_format = excel_book.add_format({
-            'bg_color': style_conf['bg_color'],
-            'font_color': style_conf['font_color'],
-            'border_color': style_conf['border_color'],
-            'border': 1
-        })
-
-        # Apply header_format to the header row
-        for col_num in range(max_col):
-            worksheet.write(0, col_num, dataframe.columns[col_num], header_format)
-
-        # Iterate over each row and column
-        for row_num in range(2, max_row + 2):
-            for col_num in range(max_col):
-                cell_value = dataframe.iloc[row_num - 2, col_num]
-                worksheet.write(row_num - 1, col_num, cell_value, rows_format)
-
-    # Add text wrap to specified cols
-    # It should be possible to do it row by row but didn't manage to make it work
-    for column in txtwrap:
-        if additional_config and 'STYLE' in additional_config:
-            txtwrap_format = excel_book.add_format({
-                'text_wrap': True,
-                'valign': 'top',
+            header_format = excel_book.add_format({
+                'bg_color': style_conf['head_bg_color'],
+                'font_color': style_conf['head_font_color'],
+                'border_color': style_conf['border_color'],
+                'border': 1
+            })
+            rows_format_dict = {
                 'bg_color': style_conf['bg_color'],
                 'font_color': style_conf['font_color'],
                 'border_color': style_conf['border_color'],
                 'border': 1
-            })
-        else:
-            txtwrap_format = excel_book.add_format({'text_wrap': True, 'valign': 'top'})
-        for row_num, value in enumerate(dataframe[column]):
-            # +1 because enumerate is zero-based and Excel rows are 1-based
-            worksheet.write(row_num + 1, dataframe.columns.get_loc(column), value, txtwrap_format)
+            }
+            rows_format = excel_book.add_format(rows_format_dict)
 
-    # Adding colors in the compliance 'Result' column
-    if style == 'compliance':
-        # Define custom formats
+            # Updating the formats starting from the base Style for all various styles - python 3.9+
+            txtwrap_format = excel_book.add_format(rows_format_dict | {'text_wrap': True, 'valign': 'top'})
+            # Formats for CIS results
+            good_format = excel_book.add_format(rows_format_dict | {'bg_color': '#C6EFCE', 'font_color': '#006100'})
+            bad_format = excel_book.add_format(rows_format_dict | {'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
+            neutral_format = excel_book.add_format(rows_format_dict | {'bg_color': '#FFEB9C', 'font_color': '#9C6500'})
+            # Formats for severity
+            low_format = excel_book.add_format(rows_format_dict | {'bg_color': '#ffff00'})
+            medium_format = excel_book.add_format(rows_format_dict | {'bg_color': '#f79646'})
+            high_format = excel_book.add_format(rows_format_dict | {'bg_color': '#ff0000'})
+            critical_format = excel_book.add_format(rows_format_dict | {'bg_color': '#954eca'})
+            # Formats for TLS issues
+            tls_medium_format = excel_book.add_format(rows_format_dict | {'bg_color': '#f79646', 'align': 'center', 'font_name': 'Webdings'})
+            tls_good_format = excel_book.add_format(rows_format_dict | {'bg_color': '#92d050', 'align': 'center', 'font_name': 'Webdings'})
+            # Format for bool
+            bool_format = excel_book.add_format(rows_format_dict | {'align': 'center'})
+
+            # Apply header_format to the header row
+            for col_num in range(max_col):
+                worksheet.write(0, col_num, dataframe.columns[col_num], header_format)
+
+        except Exception as e:
+            additional_style = False
+            print(f'ERROR - {e}. Error in additional style supplied. Style won\'t be used')
+
+    else:
+        txtwrap_format = excel_book.add_format({'text_wrap': True, 'valign': 'top'})
+        # Formats for CIS results
         good_format = excel_book.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
         bad_format = excel_book.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
         neutral_format = excel_book.add_format({'bg_color': '#FFEB9C', 'font_color': '#9C6500'})
-
-        # Iterate over the 'Result' column
-        for row_num, value in enumerate(dataframe['Result']):
-            # Determine the format based on the cell value
-            if value == 'FAILED':
-                cell_format = bad_format
-            elif value == 'PASSED':
-                cell_format = good_format
-            elif value == 'WARNING':
-                cell_format = neutral_format
-            else:
-                cell_format = None
-
-            # Apply the format if one was determined
-            if cell_format:
-                # +1 because enumerate is zero-based and Excel rows are 1-based
-                worksheet.write(row_num + 1, dataframe.columns.get_loc('Result'), value, cell_format)
-
-    elif style == 'severity':
-        # Define custom formats
+        # Formats for severity
         low_format = excel_book.add_format({'bg_color': '#ffff00'})
         medium_format = excel_book.add_format({'bg_color': '#f79646'})
         high_format = excel_book.add_format({'bg_color': '#ff0000'})
         critical_format = excel_book.add_format({'bg_color': '#954eca'})
+        # Formats for TLS issues
+        tls_medium_format = excel_book.add_format({'bg_color': '#f79646', 'align': 'center', 'font_name': 'Webdings'})
+        tls_good_format = excel_book.add_format({'bg_color': '#92d050', 'align': 'center', 'font_name': 'Webdings'})
+        # Format for bool
+        bool_format = excel_book.add_format({'align': 'center'})
 
-        # Iterate over the 'Result' column
-        for row_num, value in enumerate(dataframe['Severity']):
-            # Determine the format based on the cell value
-            if value == 'Critical':
-                cell_format = critical_format
-            elif value == 'High':
-                cell_format = high_format
-            elif value == 'Medium':
-                cell_format = medium_format
-            elif value == 'Low':
-                cell_format = low_format
-            else:
-                cell_format = None
+    # One main loop
+    if style or txtwrap or additional_style:
+        for row_num in range(max_row):
+            for col_num in range(max_col):
 
-            # Apply the format if one was determined
-            if cell_format:
-                # +1 because enumerate is zero-based and Excel rows are 1-based
-                worksheet.write(row_num + 1, dataframe.columns.get_loc('Severity'), value, cell_format)
-
-    elif style == 'tls':
-        medium_format = excel_book.add_format({'bg_color': '#f79646', 'align': 'center', 'font_name': 'Webdings'})
-        good_format = excel_book.add_format({'bg_color': '#92d050', 'align': 'center', 'font_name': 'Webdings'})
-
-        if additional_config and 'TLS' in additional_config:
-            fw = open(os.path.join(script_dir, f'{args.out}_TLS_LIST.txt'), 'a+')
-            written_issues = []
-
-        # for each col if matching the JSON, save the issue!!
-
-        for column_title in dataframe:
-            for row_num, value in enumerate(dataframe[column_title]):
-                if value == 'a':
-                    cell_format = good_format
-                elif value == 'r':
-                    cell_format = medium_format
+                # Default style to use (None if not specified)
+                if additional_style:
+                    format_to_apply = rows_format
                 else:
-                    cell_format = None
+                    format_to_apply = {}
 
-                # Apply the format if one was determined
-                if cell_format:
-                    # +1 because enumerate is zero-based and Excel rows are 1-based
-                    worksheet.write(row_num + 1, dataframe.columns.get_loc(column_title), value, cell_format)
+                cell_value = dataframe.iloc[row_num, col_num]
+                # Need to do some manual checking
+                if pd.isna(cell_value):
+                    cell_value = 'N.A'
 
-            if additional_config and 'TLS' in additional_config:
+                # Apply text wrapping if needed
+                if col_num in txtwrap_cols_indices:
+                    format_to_apply = txtwrap_format
+
+                # Yes, I don't really want to talk about this next check
+                # and how long it took me to find out panda is using numpy.bool_ instead of bool
+                if isinstance(cell_value, bool) or pd.api.types.is_bool_dtype(cell_value):
+                    format_to_apply = bool_format
+                    if cell_value == True:
+                        cell_value = 'TRUE'
+                    elif cell_value == False:
+                        cell_value = 'FALSE'
+
+                # Conditional formatting based on style
+                if style == 'compliance' and col_num == result_col_index:
+                    if cell_value == 'FAILED':
+                        format_to_apply = bad_format
+                    elif cell_value == 'PASSED':
+                        format_to_apply = good_format
+                    elif cell_value == 'WARNING':
+                        format_to_apply = neutral_format
+
+                elif style == 'severity' and col_num == severity_col_index:
+                    if cell_value == 'Critical':
+                        format_to_apply = critical_format
+                    elif cell_value == 'High':
+                        format_to_apply = high_format
+                    elif cell_value == 'Medium':
+                        format_to_apply = medium_format
+                    elif cell_value == 'Low':
+                        format_to_apply = low_format
+
+                elif style == 'tls':
+                    # Specific TLS formatting based on cell value
+                    if cell_value == 'a':
+                        format_to_apply = tls_good_format
+                    elif cell_value == 'r':
+                        format_to_apply = tls_medium_format
+
+                # Write the cell with the determined format
+                worksheet.write(row_num + 1, col_num, cell_value, format_to_apply)
+
+    # TLS additional actions if required
+    if style == 'tls' and additional_config and 'TLS' in additional_config:
+        if args.verbose:
+            print(f'DEBUG - Listing TLS  in text file: {args.out[:-5] + "_TLS_Issues.txt"}')
+        with open(args.out[:-5] + '_TLS_Issues.txt', 'a+') as fw:
+            for column_title in dataframe:
                 if column_title in additional_config["TLS"]:
                     fw.write(f'{column_title}: {additional_config["TLS"][column_title]}\n')
-
-        if additional_config and 'TLS' in additional_config:
-            fw.close()
-
 
 def CloseExcelWriter(writer):
     writer.close()
