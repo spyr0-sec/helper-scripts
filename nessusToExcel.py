@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-import os, re, argparse, shutil, time, textwrap
+import os, re, argparse, shutil, time, textwrap, json
 from xml.etree.ElementTree import ParseError
 import nessus_file_reader as nfr
 import pandas as pd
@@ -38,6 +38,8 @@ import pandas as pd
 # Credit @lapolis
 # v1.7 - 06/03/2024 - Added TLS module
 # Credit @lapolis
+# v1.8 - 22/03/2024 - Added Table Style customisation
+#                   - Added TLS list of issues in a txt file
 
 # STANDARDS
 # Columns order - Hostname / IP Address / Other (Except for hosts which will be in reporter format of IP / Hostname / OS)
@@ -49,6 +51,15 @@ Hosts = {}
 root = ""
 # this is needed for custom sorting
 severity_hierarchy = {'Critical': 4, 'High': 3, 'Medium': 2, 'Low': 1}
+
+# load additional configs
+script_dir = os.path.dirname(__file__)
+config_file = os.path.join(script_dir, './additional_config.json')
+try:
+    with open(config_file, 'r') as rf:
+        additional_config = json.load(rf)
+except:
+    additional_config = None
 
 # Functions
 def extractAll():
@@ -1422,6 +1433,13 @@ def extractCredPatch():
 
         plugin_ids = [int(nfr.plugin.report_item_value(report_item, 'pluginID')) for report_item in report_items_per_host]
 
+        # Apparently there is no single plugin that can tell us this >.>
+        unix_cred_patch_plugins = [
+            141118,     # Target Credential Status by Authentication Protocol - Valid Credentials Provided
+            97993,      # OS Identification and Installed Software Enumeration over SSH v2 (Using New SSH Library)
+            152742      # Unix Software Discovery Commands Available
+        ]
+
         # Filtering pluign "WMI Available"
         if 24269 in plugin_ids:
             report_ip = nfr.host.resolved_ip(report_host)
@@ -1437,8 +1455,7 @@ def extractCredPatch():
                    'WMI Available (Windows CredPatch)']
             df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
-        # Filtering plugin "Patch Report" expluding hosts with "WMI Available"
-        elif 66334 in plugin_ids:
+        elif bool(set(unix_cred_patch_plugins) & set(plugin_ids)):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
             report_host_os = nfr.host.detected_os(report_host)
@@ -1449,7 +1466,7 @@ def extractCredPatch():
             row = [report_fqdn,
                    report_ip,
                    report_host_os,
-                   'Patch Report Available (Linux CredPatch)']
+                   'Authenticated Patch Report Available (Linux CredPatch)']
             df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
     # Writing the DataFrame
@@ -1689,94 +1706,160 @@ def CreateExcelWriter(workBookName):
 
 def WriteDataFrame(dataframe, sheet_name, column_widths, style=None, txtwrap=[]):
     # https://xlsxwriter.readthedocs.io/worksheet.html
-    dataframe.to_excel(excelWriter, sheet_name=sheet_name, index=False, na_rep='N.A')
+    ### dataframe.to_excel(excelWriter, sheet_name=sheet_name, index=False, na_rep='N.A')
+    dataframe.to_excel(excelWriter, sheet_name=sheet_name, startrow=1, header=False, index=False, na_rep='N.A')
 
+    # Get the xlsxwriter workbook and worksheet objects
+    excel_book = excelWriter.book
     # Access the xlsxwriter workbook and worksheet objects
     worksheet = excelWriter.sheets[sheet_name]
+
+    # Get the dimensions of the dataframe and specific columns
+    max_row, max_col = dataframe.shape
+    result_col_index = dataframe.columns.get_loc('Result') if 'Result' in dataframe.columns else None
+    severity_col_index = dataframe.columns.get_loc('Severity') if 'Severity' in dataframe.columns else None
+    txtwrap_cols_indices = [dataframe.columns.get_loc(col) for col in txtwrap if col in dataframe.columns]
+
+    # Create a list of column headers, to use in add_table().
+    column_settings = [{'header': column} for column in dataframe.columns]
+
+    # Add the Excel table structure. Pandas will add the data.
+    worksheet.add_table(0, 0, max_row, max_col - 1, {'columns': column_settings, 'style': None})
 
     # Set the column widths
     for i, width in enumerate(column_widths):
         worksheet.set_column(i, i, width)
 
-    # Get the xlsxwriter workbook and worksheet objects
-    if style or txtwrap:
-        excel_book = excelWriter.book
+    ### Setting up all styles ###
+    # Grabbing default style if specified
+    additional_style = False
+    if additional_config and 'STYLE' in additional_config:
+        try:
+            additional_style = True
+            style_conf = additional_config['STYLE']
 
-        # Add text wrap to specified cols
-        # It should be possible to do it row by row but didn't manage to make it work
-        for column in txtwrap:
-            txtwrap_format = excel_book.add_format({'text_wrap': True, 'valign': 'top'})
-            for row_num, value in enumerate(dataframe[column]):
-                # +1 because enumerate is zero-based and Excel rows are 1-based
-                worksheet.write(row_num + 1, dataframe.columns.get_loc(column), value, txtwrap_format)
+            header_format = excel_book.add_format({
+                'bg_color': style_conf['head_bg_color'],
+                'font_color': style_conf['head_font_color'],
+                'border_color': style_conf['border_color'],
+                'border': 1
+            })
+            rows_format_dict = {
+                'bg_color': style_conf['bg_color'],
+                'font_color': style_conf['font_color'],
+                'border_color': style_conf['border_color'],
+                'border': 1
+            }
+            rows_format = excel_book.add_format(rows_format_dict)
 
-        # Adding colors in the compliance 'Result' column
-        if style == 'compliance':
-            # Define custom formats
-            good_format = excel_book.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
-            bad_format = excel_book.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
-            neutral_format = excel_book.add_format({'bg_color': '#FFEB9C', 'font_color': '#9C6500'})
+            # Updating the formats starting from the base Style for all various styles - python 3.9+
+            txtwrap_format = excel_book.add_format(rows_format_dict | {'text_wrap': True, 'valign': 'top'})
+            # Formats for CIS results
+            good_format = excel_book.add_format(rows_format_dict | {'bg_color': '#C6EFCE', 'font_color': '#006100'})
+            bad_format = excel_book.add_format(rows_format_dict | {'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
+            neutral_format = excel_book.add_format(rows_format_dict | {'bg_color': '#FFEB9C', 'font_color': '#9C6500'})
+            # Formats for severity
+            low_format = excel_book.add_format(rows_format_dict | {'bg_color': '#ffff00'})
+            medium_format = excel_book.add_format(rows_format_dict | {'bg_color': '#f79646'})
+            high_format = excel_book.add_format(rows_format_dict | {'bg_color': '#ff0000'})
+            critical_format = excel_book.add_format(rows_format_dict | {'bg_color': '#954eca'})
+            # Formats for TLS issues
+            tls_medium_format = excel_book.add_format(rows_format_dict | {'bg_color': '#f79646', 'align': 'center', 'font_name': 'Webdings'})
+            tls_good_format = excel_book.add_format(rows_format_dict | {'bg_color': '#92d050', 'align': 'center', 'font_name': 'Webdings'})
+            # Format for bool
+            bool_format = excel_book.add_format(rows_format_dict | {'align': 'center'})
 
-            # Iterate over the 'Result' column
-            for row_num, value in enumerate(dataframe['Result']):
-                # Determine the format based on the cell value
-                if value == 'FAILED':
-                    cell_format = bad_format
-                elif value == 'PASSED':
-                    cell_format = good_format
-                elif value == 'WARNING':
-                    cell_format = neutral_format
+            # Apply header_format to the header row
+            for col_num in range(max_col):
+                worksheet.write(0, col_num, dataframe.columns[col_num], header_format)
+
+        except Exception as e:
+            additional_style = False
+            print(f'ERROR - {e}. Error in additional style supplied. Style won\'t be used')
+
+    else:
+        txtwrap_format = excel_book.add_format({'text_wrap': True, 'valign': 'top'})
+        # Formats for CIS results
+        good_format = excel_book.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
+        bad_format = excel_book.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
+        neutral_format = excel_book.add_format({'bg_color': '#FFEB9C', 'font_color': '#9C6500'})
+        # Formats for severity
+        low_format = excel_book.add_format({'bg_color': '#ffff00'})
+        medium_format = excel_book.add_format({'bg_color': '#f79646'})
+        high_format = excel_book.add_format({'bg_color': '#ff0000'})
+        critical_format = excel_book.add_format({'bg_color': '#954eca'})
+        # Formats for TLS issues
+        tls_medium_format = excel_book.add_format({'bg_color': '#f79646', 'align': 'center', 'font_name': 'Webdings'})
+        tls_good_format = excel_book.add_format({'bg_color': '#92d050', 'align': 'center', 'font_name': 'Webdings'})
+        # Format for bool
+        bool_format = excel_book.add_format({'align': 'center'})
+
+    # One main loop
+    if style or txtwrap or additional_style:
+        for row_num in range(max_row):
+            for col_num in range(max_col):
+
+                # Default style to use (None if not specified)
+                if additional_style:
+                    format_to_apply = rows_format
                 else:
-                    cell_format = None
+                    format_to_apply = {}
 
-                # Apply the format if one was determined
-                if cell_format:
-                    # +1 because enumerate is zero-based and Excel rows are 1-based
-                    worksheet.write(row_num + 1, dataframe.columns.get_loc('Result'), value, cell_format)
+                cell_value = dataframe.iloc[row_num, col_num]
+                # Need to do some manual checking
+                if pd.isna(cell_value):
+                    cell_value = 'N.A'
 
-        elif style == 'severity':
-            # Define custom formats
-            low_format = excel_book.add_format({'bg_color': '#ffff00'})
-            medium_format = excel_book.add_format({'bg_color': '#f79646'})
-            high_format = excel_book.add_format({'bg_color': '#ff0000'})
-            critical_format = excel_book.add_format({'bg_color': '#954eca'})
+                # Apply text wrapping if needed
+                if col_num in txtwrap_cols_indices:
+                    format_to_apply = txtwrap_format
 
-            # Iterate over the 'Result' column
-            for row_num, value in enumerate(dataframe['Severity']):
-                # Determine the format based on the cell value
-                if value == 'Critical':
-                    cell_format = critical_format
-                elif value == 'High':
-                    cell_format = high_format
-                elif value == 'Medium':
-                    cell_format = medium_format
-                elif value == 'Low':
-                    cell_format = low_format
-                else:
-                    cell_format = None
+                # Yes, I don't really want to talk about this next check
+                # and how long it took me to find out panda is using numpy.bool_ instead of bool
+                if isinstance(cell_value, bool) or pd.api.types.is_bool_dtype(cell_value):
+                    format_to_apply = bool_format
+                    if cell_value == True:
+                        cell_value = 'TRUE'
+                    elif cell_value == False:
+                        cell_value = 'FALSE'
 
-                # Apply the format if one was determined
-                if cell_format:
-                    # +1 because enumerate is zero-based and Excel rows are 1-based
-                    worksheet.write(row_num + 1, dataframe.columns.get_loc('Severity'), value, cell_format)
+                # Conditional formatting based on style
+                if style == 'compliance' and col_num == result_col_index:
+                    if cell_value == 'FAILED':
+                        format_to_apply = bad_format
+                    elif cell_value == 'PASSED':
+                        format_to_apply = good_format
+                    elif cell_value == 'WARNING':
+                        format_to_apply = neutral_format
 
-        elif style == 'tls':
-            medium_format = excel_book.add_format({'bg_color': '#f79646', 'align': 'center', 'font_name': 'Webdings'})
-            good_format = excel_book.add_format({'bg_color': '#92d050', 'align': 'center', 'font_name': 'Webdings'})
+                elif style == 'severity' and col_num == severity_col_index:
+                    if cell_value == 'Critical':
+                        format_to_apply = critical_format
+                    elif cell_value == 'High':
+                        format_to_apply = high_format
+                    elif cell_value == 'Medium':
+                        format_to_apply = medium_format
+                    elif cell_value == 'Low':
+                        format_to_apply = low_format
+
+                elif style == 'tls':
+                    # Specific TLS formatting based on cell value
+                    if cell_value == 'a':
+                        format_to_apply = tls_good_format
+                    elif cell_value == 'r':
+                        format_to_apply = tls_medium_format
+
+                # Write the cell with the determined format
+                worksheet.write(row_num + 1, col_num, cell_value, format_to_apply)
+
+    # TLS additional actions if required
+    if style == 'tls' and additional_config and 'TLS' in additional_config:
+        if args.verbose:
+            print(f'DEBUG - Listing TLS  in text file: {args.out[:-5] + "_TLS_Issues.txt"}')
+        with open(args.out[:-5] + '_TLS_Issues.txt', 'a+') as fw:
             for column_title in dataframe:
-                for row_num, value in enumerate(dataframe[column_title]):
-                    if value == 'a':
-                        cell_format = good_format
-                    elif value == 'r':
-                        cell_format = medium_format
-                    else:
-                        cell_format = None
-
-                    # Apply the format if one was determined
-                    if cell_format:
-                        # +1 because enumerate is zero-based and Excel rows are 1-based
-                        worksheet.write(row_num + 1, dataframe.columns.get_loc(column_title), value, cell_format)
-
+                if column_title in additional_config["TLS"]:
+                    fw.write(f'{column_title}: {additional_config["TLS"][column_title]}\n')
 
 def CloseExcelWriter(writer):
     writer.close()
@@ -1795,6 +1878,7 @@ parser.add_argument('--out', '-o', required=False, help='Name of resulting Excel
 parser.add_argument('--quiet', '-q', action='store_true', help='Accept defaults during execution')
 parser.add_argument('--keyword', '-k', required=False, help='Extract all information relating to this word')
 parser.add_argument('--noclean', '-n', required=False, action='store_true', help='Do not remove duplicates and merge columns in outdatedsoftware')
+# parser.add_argument('--nostyle', '-s', required=False, action='store_true', help='Do not apply any style')
 parser.add_argument('--module', '-m', type=str, default='all',
 help=textwrap.dedent('''Comma seperated list of what data you want to extract:
 all              = Default
@@ -1875,14 +1959,14 @@ if 'compliance' in argvars['module'] or "all" in args.module:
     if not os.path.isfile(backupPath):
         if args.quiet:
             if args.verbose:
-                print(f'DEBUG - Taking backup of Nessus file - {os.getcwd()}{os.sep}{backup_file}')
+                print(f'DEBUG - Taking backup of Nessus file - {backup_file}')
 
             shutil.copyfile(args.file, f'{backup_file}')
         else:
             comp_answer = input("To extract compliance output, changes to XML tags are required. While this should not cause any further issues, would you like to take a backup of your Nessus file first? [Y/n] ")
             if comp_answer == 'Y' or comp_answer == 'Yes' or comp_answer == 'y' or comp_answer == 'yes' or comp_answer == '':
                 if args.verbose:
-                    print(f'DEBUG - Taking backup of Nessus file - {os.getcwd()}{os.sep}{backup_file}')
+                    print(f'DEBUG - Taking backup of Nessus file - {backup_file}')
 
                 shutil.copyfile(args.file, f'{backup_file}')
     else:
@@ -1965,7 +2049,7 @@ else:
         print(f'WARN - provided module "{module}" is invalid. Omitting')
 
 toc = time.perf_counter()
-print(f'COMPLETED! Output can be found in {os.getcwd()}{os.sep}{args.out} Total time taken: {toc - tic:0.4f} seconds')
+print(f'COMPLETED! Output can be found in {os.path.join(args.out)} Total time taken: {toc - tic:0.4f} seconds')
 CloseExcelWriter(excelWriter)
 
 exit()
