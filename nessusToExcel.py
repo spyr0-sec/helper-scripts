@@ -1431,6 +1431,13 @@ def extractCredPatch():
 
         plugin_ids = [int(nfr.plugin.report_item_value(report_item, 'pluginID')) for report_item in report_items_per_host]
 
+        # Apparently there is no single plugin that can tell us this >.>
+        unix_cred_patch_plugins = [
+            141118,     # Target Credential Status by Authentication Protocol - Valid Credentials Provided
+            97993,      # OS Identification and Installed Software Enumeration over SSH v2 (Using New SSH Library)
+            152742      # Unix Software Discovery Commands Available
+        ]
+
         # Filtering pluign "WMI Available"
         if 24269 in plugin_ids:
             report_ip = nfr.host.resolved_ip(report_host)
@@ -1446,8 +1453,7 @@ def extractCredPatch():
                    'WMI Available (Windows CredPatch)']
             df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
-        # Filtering plugin "Patch Report" expluding hosts with "WMI Available"
-        elif 66334 in plugin_ids:
+        elif bool(set(unix_cred_patch_plugins) & set(plugin_ids)):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
             report_host_os = nfr.host.detected_os(report_host)
@@ -1458,7 +1464,7 @@ def extractCredPatch():
             row = [report_fqdn,
                    report_ip,
                    report_host_os,
-                   'Patch Report Available (Linux CredPatch)']
+                   'Authenticated Patch Report Available (Linux CredPatch)']
             df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
     # Writing the DataFrame
@@ -1718,6 +1724,8 @@ def WriteDataFrame(dataframe, sheet_name, column_widths, style=None, txtwrap=[])
     # Set the column widths
     for i, width in enumerate(column_widths):
         worksheet.set_column(i, i, width)
+
+    # TODO: Single loop with all styles
 
     # grabbing default style if specified
     if additional_config and 'STYLE' in additional_config:
