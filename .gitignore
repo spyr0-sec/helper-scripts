@@ -3,6 +3,11 @@ venv
 vonv
 vinv
 .*
+*.nessus
+*.csv
+*.xlsx
+*_TLS_Issues.txt
+Host Information.txt
 
 # that won't work because the file exists. On your local dir, you can use:
 # git update-index --assume-unchanged nessusToExcel/additional_config.json
