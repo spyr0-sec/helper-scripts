@@ -1,0 +1,36 @@
+// Just uncomment whatever you need
+
+//{
+//  "TLS": {
+//    "SSL Certificate Cannot Be Trusted": "",
+//    "SSL Certificate Expiry": "",
+//    "SSL Self-Signed Certificate": "",
+//    "Certificate chain keys less than 2048 bits in length": "",
+//    "NULL ciphers suites accepted": "",
+//    "Anonymous cipher suites accepted": "",
+//    "Weak strength ciphers accepted": "",
+//    "RC4 cipher suites accepted": "",
+//    "Plaintext injection (insecure renegotiation)": "",
+//    "Susceptibility to Heartbleed attack (insufficient patching)": "",
+//    "Susceptibility to CRIME attack (HTTP compression)": "",
+//    "Susceptibility BEAST attack (CBC ciphers)": "",
+//    "Change Cipher Spec Injection (insufficient patching)": "",
+//    "Susceptibility to SSL POODLE attack (SSL 3.0 enabled)": "",
+//    "Susceptibility to TLS POODLE attack (insufficient patching)": "",
+//    "Susceptibility to DROWN attack (SSL 2.0 enabled)": "",
+//    "Susceptibility to FREAK attack (export grade RSA keys)": "",
+//    "OpenSSL Padding Oracle Attack": "",
+//    "Susceptibility to SWEET32 attack (supports 64 bit block ciphers)": "",
+//    "Susceptibility to LOGJAM attack (weak DH key exchange supported)": "",
+//    "Protocols with known weaknesses allowed": "",
+//    "Certificate signed with a weak hashing algorithm": "",
+//    "Susceptibility to LUCKY13 attack (supports CBC encryption cipher suites)": ""
+//  },
+//  "STYLE": {
+//    "head_bg_color": "#",
+//    "head_font_color": "#",
+//    "bg_color": "#",
+//    "font_color": "#",
+//    "border_color": "#"
+//  }
+//}
