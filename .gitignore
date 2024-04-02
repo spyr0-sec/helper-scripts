@@ -3,4 +3,4 @@ venv
 vonv
 vinv
 .*
-additional_config.json
+nessusToExcel/additional_config.json
