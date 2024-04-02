@@ -3,4 +3,8 @@ venv
 vonv
 vinv
 .*
+
+# that won't work because the file exists. On your local dir, you can use:
+# git update-index --assume-unchanged nessusToExcel/additional_config.json
+# just leaving this here for future ref
 nessusToExcel/additional_config.json
