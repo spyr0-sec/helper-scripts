@@ -81,7 +81,8 @@ def extractAll():
     extractWeakServicePermissions()
     extractWeakSSHAlgorithms()
     extractWeakRDP()
-    extractWeakSMB()
+    # TODO:
+    # extractWeakSMB()
     extractCredPatch()
     extractTLSWeaknesses()
 
@@ -1303,7 +1304,8 @@ def extractWeakSSHAlgorithms():
         passwd_plugin = nfr.plugin.plugin_outputs(root, report_host, '149334')
         passwd_accepted = 'No'
 
-        if not (re.match('[Cc]heck Audit Trail', enc_plugin)) or not (re.match('[Cc]heck Audit Trail', keyex_plugin)) or not (re.match('[Cc]heck Audit Trail', cbc_plugin)) or not (re.match('[Cc]heck Audit Trail', mac_plugin) or not (re.match('[Cc]heck Audit Trail', passwd_plugin))):
+        plugins = [enc_plugin, keyex_plugin, cbc_plugin, mac_plugin, passwd_plugin]
+        if not all(re.match('[Cc]heck Audit Trail', plugin) for plugin in plugins):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
 
@@ -1312,7 +1314,7 @@ def extractWeakSSHAlgorithms():
 
                 plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
                 # check enc, kek, cbc or mac 
-                if plugin_id == 90317 or plugin_id == 153953 or plugin_id == 70658 or plugin_id == 71049 or plugin_id == 149334:
+                if plugin_id in [90317, 153953, 70658, 71049, 149334]:
                     # Weak encryption ciphers
                     if plugin_id == 90317:
 
@@ -1423,66 +1425,84 @@ def extractWeakRDP():
 
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
     columns = ['Hostname', 'IP Address', 'Protocol', 'Port', 'NLA Enabled', 'MITM Weakness',
-               'Weak Encryption Level', 'Not FIPS Compliant']
+               'Weak Encryption Level', 'FIPS Compliant']
     column_widths = [30, 13, 10, 8, 15, 18, 22, 25]
     df = pd.DataFrame(columns=columns)
 
+    plugins = {
+        '58453': 4,    # NLA Enabled
+        '18405': 5,    # MITM Weakness
+        '57690': 6,    # Weak Encryption Level
+        '30218': 7     # FIPS Compliant
+    }
+
     for report_host in nfr.scan.report_hosts(root):
-        # Initialize variables for host
-        finding_present = False
-        rdp_nla_vuln = rdp_mitm_vuln = rdp_enc_value = rdp_fips_value = "-"
         report_ip = nfr.host.resolved_ip(report_host)
-        report_fqdn = Hosts.get(report_ip, "-")
 
         report_items_per_host = nfr.host.report_items(report_host)
         for report_item in report_items_per_host:
-            plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
-            rdp_port_candidate = nfr.plugin.report_item_value(report_item, 'port')
 
-            if rdp_port_candidate == "3389":
-                # If we are dealing with the RDP port, update the protocol and port once
-                rdp_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
-                rdp_port = rdp_port_candidate
+            plugin_id = str(nfr.plugin.report_item_value(report_item, 'pluginID'))
+            if plugin_id in plugins:
+                row = [None] * len(columns)
 
-                # Flag to check if at least one finding is present for the host
-                if plugin_id in [58453, 18405, 57690, 30218]:
-                    finding_present = True
+                # mark it as vulnerable
+                # TODO: (maybe) plugin IDs 57690 and 30218 can get more info?
+                #  rdp_enc_plugin.splitlines()[-1]
+                #  rdp_fips_plugin.splitlines()[-1]
+                row[ plugins[plugin_id] ] = 'r'
+                report_fqdn = Hosts[report_ip]
+                report_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                report_port = nfr.plugin.report_item_value(report_item, 'port')
 
-                    if plugin_id == 58453:
-                        rdp_nla_plugin = nfr.plugin.plugin_outputs(root, report_host, '58453')
-                        if rdp_nla_plugin and not re.match('[Cc]heck Audit Trail', rdp_nla_plugin):
-                            rdp_nla_vuln = "No"
+                # mark all the None as not vulnerable
+                row = [value if value is not None else 'a' for value in row]
 
-                    if plugin_id == 18405:
-                        rdp_mitm_plugin = nfr.plugin.plugin_outputs(root, report_host, '18405')
-                        if rdp_mitm_plugin and not re.match('[Cc]heck Audit Trail', rdp_mitm_plugin):
-                            rdp_mitm_vuln = "Yes"
+                # add the host info
+                row[0] = report_fqdn
+                row[1] = report_ip
+                row[2] = report_protocol
+                row[3] = report_port
 
-                    if plugin_id == 57690:
-                        rdp_enc_plugin = nfr.plugin.plugin_outputs(root, report_host, '57690')
-                        if rdp_enc_plugin and not re.match('[Cc]heck Audit Trail', rdp_enc_plugin):
-                            rdp_enc_value = rdp_enc_plugin.splitlines()[-1]
-
-                    if plugin_id == 30218:
-                        rdp_fips_plugin = nfr.plugin.plugin_outputs(root, report_host, '30218')
-                        if rdp_fips_plugin and not re.match('[Cc]heck Audit Trail', rdp_fips_plugin):
-                            rdp_fips_value = rdp_fips_plugin.splitlines()[-1]
-
-        # After processing all report items for the host, add a single row to the DataFrame if finding present
-        if finding_present:
-            row = [report_fqdn, report_ip, rdp_protocol, rdp_port, rdp_nla_vuln, rdp_mitm_vuln, rdp_enc_value, rdp_fips_value]
-            df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+                # add the row
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
     # Writing the DataFrame
     if not df.empty:
-        df = df.drop_duplicates(subset=['IP Address', 'Port'], keep='last')
-        WriteDataFrame(df, 'Weak RDP', column_widths)
+        if not args.noclean:
+            df = df.drop_duplicates()
+
+            # congregate all findings
+            # define aggregation functions for each column
+            # TODO: define a function for the repeated methods
+            aggregations = {
+                'Hostname': lambda x: next((i for i in reversed(x.tolist()) if i), None),
+                # Keep the first non-empty
+            }
+
+            # Apply a default aggregation logic to all other columns
+            # This is used to keep the vulnerable mark
+            # TODO: This will need to change if previous TODO is applied
+            exclude_columns = ['IP Address', 'Protocol', 'Port', 'Hostname']
+            for column in df.columns:
+                if column not in exclude_columns:
+                    aggregations[column] = lambda x: 'r' if 'r' in x.values else 'a'
+
+            df = df.groupby(['IP Address', 'Protocol', 'Port'], as_index=False).agg(aggregations)
+            df = df[columns]
+
+            # drop all columns that have no issues
+            df = df.drop(columns=[col for col in df if (df[col] == 'a').all()])
+
+        # TODO: Need a custom style if previous TODO is applied
+        WriteDataFrame(df, 'RDP Issues', column_widths[:len(df.columns)], style='tls-')
 
     toc = time.perf_counter()
     if args.verbose:
-        print(f"DEBUG - Completed RDP. {len(df)} rows took {toc - tic:0.4f} seconds")
+        print(f'DEBUG - Completed RDP. {len(df)} rows took {toc - tic:0.4f} seconds')
 
 
+# TODO: WIP: This won't be called when all modules are executed
 def extractWeakSMB():
     tic = time.perf_counter()
 
@@ -1662,11 +1682,8 @@ def extractTLSWeaknesses():
                '20007': 26,  # 'Protocols with known weaknesses allowed',
                '104743': 26}  # 'Protocols with known weaknesses allowed'
 
-    # this will be used to store all issues
-    host_dict = {}
     for report_host in nfr.scan.report_hosts(root):
         report_ip = nfr.host.resolved_ip(report_host)
-
 
         report_items_per_host = nfr.host.report_items(report_host)
         for report_item in report_items_per_host:
@@ -1961,7 +1978,7 @@ def WriteDataFrame(dataframe, sheet_name, column_widths, style=None, txtwrap=[])
                     elif cell_value == 'Low':
                         format_to_apply = low_format
 
-                elif style == 'tls':
+                elif style and style.startswith('tls'):
                     # Specific TLS formatting based on cell value
                     if cell_value == 'a':
                         format_to_apply = tls_good_format
