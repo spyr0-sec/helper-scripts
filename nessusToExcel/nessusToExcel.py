@@ -80,6 +80,8 @@ def extractAll():
     extractUnsupportedOperatingSystems()
     extractWeakServicePermissions()
     extractWeakSSHAlgorithms()
+    extractWeakRDP()
+    extractWeakSMB()
     extractCredPatch()
     extractTLSWeaknesses()
 
@@ -1416,6 +1418,123 @@ def extractWeakSSHAlgorithms():
     if args.verbose:
         print(f'DEBUG - Completed Weak SSH Algorithms and Ciphers. {len(df)} rows took {toc - tic:0.4f} seconds')
 
+def extractWeakRDP():
+    tic = time.perf_counter()
+
+    # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
+    columns = ['Hostname', 'IP Address', 'Protocol', 'Port', 'NLA Enabled', 'MITM Weakness',
+               'Weak Encryption Level', 'Not FIPS Compliant']
+    column_widths = [30, 13, 10, 8, 15, 18, 22, 25]
+    df = pd.DataFrame(columns=columns)
+
+    for report_host in nfr.scan.report_hosts(root):
+        # Initialize variables for host
+        finding_present = False
+        rdp_nla_vuln = rdp_mitm_vuln = rdp_enc_value = rdp_fips_value = "-"
+        report_ip = nfr.host.resolved_ip(report_host)
+        report_fqdn = Hosts.get(report_ip, "-")
+
+        report_items_per_host = nfr.host.report_items(report_host)
+        for report_item in report_items_per_host:
+            plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
+            rdp_port_candidate = nfr.plugin.report_item_value(report_item, 'port')
+
+            if rdp_port_candidate == "3389":
+                # If we are dealing with the RDP port, update the protocol and port once
+                rdp_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                rdp_port = rdp_port_candidate
+
+                # Flag to check if at least one finding is present for the host
+                if plugin_id in [58453, 18405, 57690, 30218]:
+                    finding_present = True
+
+                    if plugin_id == 58453:
+                        rdp_nla_plugin = nfr.plugin.plugin_outputs(root, report_host, '58453')
+                        if rdp_nla_plugin and not re.match('[Cc]heck Audit Trail', rdp_nla_plugin):
+                            rdp_nla_vuln = "No"
+
+                    if plugin_id == 18405:
+                        rdp_mitm_plugin = nfr.plugin.plugin_outputs(root, report_host, '18405')
+                        if rdp_mitm_plugin and not re.match('[Cc]heck Audit Trail', rdp_mitm_plugin):
+                            rdp_mitm_vuln = "Yes"
+
+                    if plugin_id == 57690:
+                        rdp_enc_plugin = nfr.plugin.plugin_outputs(root, report_host, '57690')
+                        if rdp_enc_plugin and not re.match('[Cc]heck Audit Trail', rdp_enc_plugin):
+                            rdp_enc_value = rdp_enc_plugin.splitlines()[-1]
+
+                    if plugin_id == 30218:
+                        rdp_fips_plugin = nfr.plugin.plugin_outputs(root, report_host, '30218')
+                        if rdp_fips_plugin and not re.match('[Cc]heck Audit Trail', rdp_fips_plugin):
+                            rdp_fips_value = rdp_fips_plugin.splitlines()[-1]
+
+        # After processing all report items for the host, add a single row to the DataFrame if finding present
+        if finding_present:
+            row = [report_fqdn, report_ip, rdp_protocol, rdp_port, rdp_nla_vuln, rdp_mitm_vuln, rdp_enc_value, rdp_fips_value]
+            df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+
+    # Writing the DataFrame
+    if not df.empty:
+        df = df.drop_duplicates(subset=['IP Address', 'Port'], keep='last')
+        WriteDataFrame(df, 'Weak RDP', column_widths)
+
+    toc = time.perf_counter()
+    if args.verbose:
+        print(f"DEBUG - Completed RDP. {len(df)} rows took {toc - tic:0.4f} seconds")
+
+
+def extractWeakSMB():
+    tic = time.perf_counter()
+
+    columns = ['Hostname', 'IP Address', 'Protocol', 'Port', 'SMB Signing Enforced', 'SMBv1 Disabled']
+    column_widths = [30, 13, 10, 8, 20, 17]
+    df = pd.DataFrame(columns=columns)
+
+    for report_host in nfr.scan.report_hosts(root):
+        # Initialize variables for host
+        finding_present = False
+        smb_signing_vuln = smb_v1_vuln = "Yes"
+        report_ip = nfr.host.resolved_ip(report_host)
+        report_fqdn = Hosts.get(report_ip, "-")
+
+        report_items_per_host = nfr.host.report_items(report_host)
+        for report_item in report_items_per_host:
+            plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
+            smb_port_candidate = nfr.plugin.report_item_value(report_item, 'port')
+
+            if smb_port_candidate == "445":
+                # If we are dealing with SMB, update the protocol and port once
+                smb_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                smb_port = smb_port_candidate
+
+                # Flag to check if at least one finding is present for the host
+                if plugin_id in [57608, 96982]:
+                    finding_present = True
+
+                    if plugin_id == 57608:
+                        smb_signing_plugin = nfr.plugin.plugin_outputs(root, report_host, '57608')
+                        if smb_signing_plugin and not re.match('[Cc]heck Audit Trail', smb_signing_plugin):
+                            smb_signing_vuln = "No"
+
+                    if plugin_id == 96982:
+                        smb_v1_plugin = nfr.plugin.plugin_outputs(root, report_host, '96982')
+                        if smb_v1_plugin and not re.match('[Cc]heck Audit Trail', smb_v1_plugin):
+                            smb_v1_vuln = "No"
+
+        # After processing all report items for the host, add a single row to the DataFrame if finding present
+        if finding_present:
+            row = [report_fqdn, report_ip, smb_protocol, smb_port, smb_signing_vuln, smb_v1_vuln]
+            df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+
+    # Writing the DataFrame
+    if not df.empty:
+        df = df.drop_duplicates(subset=['IP Address', 'Port'], keep='last')
+        WriteDataFrame(df, 'Weak SMB', column_widths)
+
+    toc = time.perf_counter()
+    if args.verbose:
+        print(f"DEBUG - Completed SMB. {len(df)} rows took {toc - tic:0.4f} seconds")
+
 # Extract list of hosts in which Cred Patch was Possible/Successful
 def extractCredPatch():
     tic = time.perf_counter()
@@ -1896,6 +2015,8 @@ services         = Insecure Services and their weak permissions
 search           = Extract all information based on keyword e.g. "Log4j" (Requires --keyword / -k flag)
 software         = Enumerate all installed software
 ssh              = Identify all weak SSH algorithms and ciphers in use
+rdp              = Identify all weak RDP settings. NLA, weak encryption cipher etc
+smb              = Identify all weak SMB settings. Signing not enforced, version 1 enabled etc
 unencrypted      = Unencrypted protocols in use. FTP, Telnet etc.
 unquoted         = Unquoted service paths and their weak permissions
 unsupported      = Unsupported operating systems
@@ -2028,6 +2149,10 @@ else:
             extractInstalledSoftware() ; continue
         if 'ssh' == module.lower():
             extractWeakSSHAlgorithms() ; continue
+        if 'rdp' == module.lower():
+            extractWeakRDP() ; continue
+        if 'smb' == module.lower():
+            extractWeakSMB() ; continue
         if 'unencrypted' == module.lower():
             extractUnencryptedProtocols() ; continue
         if 'unquoted' == module.lower():
