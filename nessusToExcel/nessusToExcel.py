@@ -43,6 +43,8 @@ import pandas as pd
 # Credit @lapolis
 # v1.9 - 24/04/2024 - Added RDP module
 # Credit @ttlsec
+# v1.9 - 15/05/2024 - Improved extractUnencryptedProtocols
+# Credit @lapolis
 
 # STANDARDS
 # Columns order - Hostname / IP Address / Other (Except for hosts which will be in reporter format of IP / Hostname / OS)
@@ -535,12 +537,8 @@ def extractHTTPServers():
                 http_port = nfr.plugin.report_item_value(report_item, 'port')
 
                 # Write to Excel worksheet if not WinRM / SCCM HTTP ports
+                # TODO: better filter out WinRM / SCCM HTTP (maybe with plugin 10107 content)
                 if (http_port != "5985") and (http_port != "8005")  and (http_port != "47001"):
-                    row = [report_fqdn,
-                           report_ip,
-                           http_protocol,
-                           http_port,
-                           lines[2]]
                     df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
     # Writing the DataFrame
@@ -1031,21 +1029,38 @@ def extractUnencryptedProtocols():
     column_widths = [40, 15, 10, 6, 50]
     df = pd.DataFrame(columns=columns)
 
+    tls_detection_plugins = [
+        10863,  # SSL Certificate Information
+        56984,  # SSL / TLS Versions Supported
+        115491, # SSL/TLS Cipher Suites Supported
+        112530, # SSL/TLS Versions Supported
+        700112  # SSL/TLS Detection
+    ]
+
     for report_host in nfr.scan.report_hosts(root):
         report_ip = nfr.host.resolved_ip(report_host)
         report_fqdn = Hosts[report_ip]
 
         report_items_per_host = nfr.host.report_items(report_host)
+        plugin_ids_per_host = [int(nfr.plugin.report_item_value(i, 'pluginID')) for i in report_items_per_host]
         for report_item in report_items_per_host:
 
             plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
-            if (plugin_id == 10092 or plugin_id == 10281 or plugin_id == 54582 or plugin_id == 11819 or plugin_id == 35296
+            unencrypted_protocol = None
+            # checking all HTTP servers first
+            if plugin_id == 10107 and not any([p_id in tls_detection_plugins for p_id in plugin_ids_per_host]):
+                unencrypted_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                unencrypted_port = nfr.plugin.report_item_value(report_item, 'port')
+                unencrypted_description = nfr.plugin.report_item_value(report_item, 'plugin_name')
+
+            elif (plugin_id == 10092 or plugin_id == 10281 or plugin_id == 54582 or plugin_id == 11819 or plugin_id == 35296
             or plugin_id == 87733 or plugin_id == 10203 or plugin_id == 10205 or plugin_id == 10061 or plugin_id == 10198
             or plugin_id == 10891 or plugin_id == 65792):
                 unencrypted_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
                 unencrypted_port = nfr.plugin.report_item_value(report_item, 'port')
                 unencrypted_description = nfr.plugin.report_item_value(report_item, 'plugin_name')
 
+            if unencrypted_protocol:
                 # Write to Excel worksheet
                 row = [report_fqdn,
                        report_ip,
@@ -2037,7 +2052,7 @@ software         = Enumerate all installed software
 ssh              = Identify all weak SSH algorithms and ciphers in use
 rdp              = Identify all weak RDP settings. NLA, weak encryption cipher etc
 smb              = Identify all weak SMB settings. Signing not enforced, version 1 enabled etc
-unencrypted      = Unencrypted protocols in use. FTP, Telnet etc.
+unencrypted      = Unencrypted protocols in use. FTP, Telnet, HTTP, etc.
 unquoted         = Unquoted service paths and their weak permissions
 unsupported      = Unsupported operating systems
 winpatches       = Missing Microsoft security patches
