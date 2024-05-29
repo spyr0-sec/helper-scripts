@@ -525,21 +525,25 @@ def extractHTTPServers():
         if not re.match('[Cc]heck Audit Trail', plugin_10107):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
-
             lines = plugin_10107.splitlines()
 
-        report_items_per_host = nfr.host.report_items(report_host)
-        for report_item in report_items_per_host:
+            report_items_per_host = nfr.host.report_items(report_host)
+            for report_item in report_items_per_host:
 
-            plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
-            if plugin_id == 10107:
-                http_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
-                http_port = nfr.plugin.report_item_value(report_item, 'port')
+                plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
+                if plugin_id == 10107:
+                    http_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                    http_port = nfr.plugin.report_item_value(report_item, 'port')
 
-                # Write to Excel worksheet if not WinRM / SCCM HTTP ports
-                # TODO: better filter out WinRM / SCCM HTTP (maybe with plugin 10107 content)
-                if (http_port != "5985") and (http_port != "8005")  and (http_port != "47001"):
-                    df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+                    # Write to Excel worksheet if not WinRM / SCCM HTTP ports
+                    # TODO: better filter out WinRM / SCCM HTTP (maybe with plugin 10107 content)
+                    if (http_port != "5985") and (http_port != "8005")  and (http_port != "47001"):
+                        row = [report_fqdn,
+                               report_ip,
+                               http_protocol,
+                               http_port,
+                               lines[2]]
+                        df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
     # Writing the DataFrame
     if not df.empty:
