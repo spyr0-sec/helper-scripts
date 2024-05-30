@@ -40,6 +40,11 @@ import pandas as pd
 # Credit @lapolis
 # v1.8 - 22/03/2024 - Added Table Style customisation
 #                   - Added TLS list of issues in a txt file
+# Credit @lapolis
+# v1.9 - 24/04/2024 - Added RDP module
+# Credit @ttlsec
+# v1.9 - 15/05/2024 - Improved extractUnencryptedProtocols
+# Credit @lapolis
 
 # STANDARDS
 # Columns order - Hostname / IP Address / Other (Except for hosts which will be in reporter format of IP / Hostname / OS)
@@ -80,6 +85,9 @@ def extractAll():
     extractUnsupportedOperatingSystems()
     extractWeakServicePermissions()
     extractWeakSSHAlgorithms()
+    extractWeakRDP()
+    # TODO:
+    # extractWeakSMB()
     extractCredPatch()
     extractTLSWeaknesses()
 
@@ -517,25 +525,25 @@ def extractHTTPServers():
         if not re.match('[Cc]heck Audit Trail', plugin_10107):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
-
             lines = plugin_10107.splitlines()
 
-        report_items_per_host = nfr.host.report_items(report_host)
-        for report_item in report_items_per_host:
+            report_items_per_host = nfr.host.report_items(report_host)
+            for report_item in report_items_per_host:
 
-            plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
-            if plugin_id == 10107:
-                http_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
-                http_port = nfr.plugin.report_item_value(report_item, 'port')
+                plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
+                if plugin_id == 10107:
+                    http_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                    http_port = nfr.plugin.report_item_value(report_item, 'port')
 
-                # Write to Excel worksheet if not WinRM / SCCM HTTP ports
-                if (http_port != "5985") and (http_port != "8005")  and (http_port != "47001"):
-                    row = [report_fqdn,
-                           report_ip,
-                           http_protocol,
-                           http_port,
-                           lines[2]]
-                    df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+                    # Write to Excel worksheet if not WinRM / SCCM HTTP ports
+                    # TODO: better filter out WinRM / SCCM HTTP (maybe with plugin 10107 content)
+                    if (http_port != "5985") and (http_port != "8005")  and (http_port != "47001"):
+                        row = [report_fqdn,
+                               report_ip,
+                               http_protocol,
+                               http_port,
+                               lines[2]]
+                        df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
     # Writing the DataFrame
     if not df.empty:
@@ -1025,21 +1033,38 @@ def extractUnencryptedProtocols():
     column_widths = [40, 15, 10, 6, 50]
     df = pd.DataFrame(columns=columns)
 
+    tls_detection_plugins = [
+        10863,  # SSL Certificate Information
+        56984,  # SSL / TLS Versions Supported
+        115491, # SSL/TLS Cipher Suites Supported
+        112530, # SSL/TLS Versions Supported
+        700112  # SSL/TLS Detection
+    ]
+
     for report_host in nfr.scan.report_hosts(root):
         report_ip = nfr.host.resolved_ip(report_host)
         report_fqdn = Hosts[report_ip]
 
         report_items_per_host = nfr.host.report_items(report_host)
+        plugin_ids_per_host = [int(nfr.plugin.report_item_value(i, 'pluginID')) for i in report_items_per_host]
         for report_item in report_items_per_host:
 
             plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
-            if (plugin_id == 10092 or plugin_id == 10281 or plugin_id == 54582 or plugin_id == 11819 or plugin_id == 35296
+            unencrypted_protocol = None
+            # checking all HTTP servers first
+            if plugin_id == 10107 and not any([p_id in tls_detection_plugins for p_id in plugin_ids_per_host]):
+                unencrypted_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                unencrypted_port = nfr.plugin.report_item_value(report_item, 'port')
+                unencrypted_description = nfr.plugin.report_item_value(report_item, 'plugin_name')
+
+            elif (plugin_id == 10092 or plugin_id == 10281 or plugin_id == 54582 or plugin_id == 11819 or plugin_id == 35296
             or plugin_id == 87733 or plugin_id == 10203 or plugin_id == 10205 or plugin_id == 10061 or plugin_id == 10198
             or plugin_id == 10891 or plugin_id == 65792):
                 unencrypted_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
                 unencrypted_port = nfr.plugin.report_item_value(report_item, 'port')
                 unencrypted_description = nfr.plugin.report_item_value(report_item, 'plugin_name')
 
+            if unencrypted_protocol:
                 # Write to Excel worksheet
                 row = [report_fqdn,
                        report_ip,
@@ -1301,7 +1326,8 @@ def extractWeakSSHAlgorithms():
         passwd_plugin = nfr.plugin.plugin_outputs(root, report_host, '149334')
         passwd_accepted = 'No'
 
-        if not (re.match('[Cc]heck Audit Trail', enc_plugin)) or not (re.match('[Cc]heck Audit Trail', keyex_plugin)) or not (re.match('[Cc]heck Audit Trail', cbc_plugin)) or not (re.match('[Cc]heck Audit Trail', mac_plugin) or not (re.match('[Cc]heck Audit Trail', passwd_plugin))):
+        plugins = [enc_plugin, keyex_plugin, cbc_plugin, mac_plugin, passwd_plugin]
+        if not all(re.match('[Cc]heck Audit Trail', plugin) for plugin in plugins):
             report_ip = nfr.host.resolved_ip(report_host)
             report_fqdn = Hosts[report_ip]
 
@@ -1310,7 +1336,7 @@ def extractWeakSSHAlgorithms():
 
                 plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
                 # check enc, kek, cbc or mac 
-                if plugin_id == 90317 or plugin_id == 153953 or plugin_id == 70658 or plugin_id == 71049 or plugin_id == 149334:
+                if plugin_id in [90317, 153953, 70658, 71049, 149334]:
                     # Weak encryption ciphers
                     if plugin_id == 90317:
 
@@ -1415,6 +1441,141 @@ def extractWeakSSHAlgorithms():
     toc = time.perf_counter()
     if args.verbose:
         print(f'DEBUG - Completed Weak SSH Algorithms and Ciphers. {len(df)} rows took {toc - tic:0.4f} seconds')
+
+def extractWeakRDP():
+    tic = time.perf_counter()
+
+    # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
+    columns = ['Hostname', 'IP Address', 'Protocol', 'Port', 'NLA Enabled', 'MITM Weakness',
+               'Weak Encryption Level', 'FIPS Compliant']
+    column_widths = [30, 13, 10, 8, 15, 18, 22, 25]
+    df = pd.DataFrame(columns=columns)
+
+    plugins = {
+        '58453': 4,    # NLA Enabled
+        '18405': 5,    # MITM Weakness
+        '57690': 6,    # Weak Encryption Level
+        '30218': 7     # FIPS Compliant
+    }
+
+    for report_host in nfr.scan.report_hosts(root):
+        report_ip = nfr.host.resolved_ip(report_host)
+
+        report_items_per_host = nfr.host.report_items(report_host)
+        for report_item in report_items_per_host:
+
+            plugin_id = str(nfr.plugin.report_item_value(report_item, 'pluginID'))
+            if plugin_id in plugins:
+                row = [None] * len(columns)
+
+                # mark it as vulnerable
+                # TODO: (maybe) plugin IDs 57690 and 30218 can get more info?
+                #  rdp_enc_plugin.splitlines()[-1]
+                #  rdp_fips_plugin.splitlines()[-1]
+                row[ plugins[plugin_id] ] = 'r'
+                report_fqdn = Hosts[report_ip]
+                report_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                report_port = nfr.plugin.report_item_value(report_item, 'port')
+
+                # mark all the None as not vulnerable
+                row = [value if value is not None else 'a' for value in row]
+
+                # add the host info
+                row[0] = report_fqdn
+                row[1] = report_ip
+                row[2] = report_protocol
+                row[3] = report_port
+
+                # add the row
+                df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+
+    # Writing the DataFrame
+    if not df.empty:
+        if not args.noclean:
+            df = df.drop_duplicates()
+
+            # congregate all findings
+            # define aggregation functions for each column
+            # TODO: define a function for the repeated methods
+            aggregations = {
+                'Hostname': lambda x: next((i for i in reversed(x.tolist()) if i), None),
+                # Keep the first non-empty
+            }
+
+            # Apply a default aggregation logic to all other columns
+            # This is used to keep the vulnerable mark
+            # TODO: This will need to change if previous TODO is applied
+            exclude_columns = ['IP Address', 'Protocol', 'Port', 'Hostname']
+            for column in df.columns:
+                if column not in exclude_columns:
+                    aggregations[column] = lambda x: 'r' if 'r' in x.values else 'a'
+
+            df = df.groupby(['IP Address', 'Protocol', 'Port'], as_index=False).agg(aggregations)
+            df = df[columns]
+
+            # drop all columns that have no issues
+            df = df.drop(columns=[col for col in df if (df[col] == 'a').all()])
+
+        # TODO: Need a custom style if previous TODO is applied
+        WriteDataFrame(df, 'RDP Issues', column_widths[:len(df.columns)], style='tls-')
+
+    toc = time.perf_counter()
+    if args.verbose:
+        print(f'DEBUG - Completed RDP. {len(df)} rows took {toc - tic:0.4f} seconds')
+
+
+# TODO: WIP: This won't be called when all modules are executed
+def extractWeakSMB():
+    tic = time.perf_counter()
+
+    columns = ['Hostname', 'IP Address', 'Protocol', 'Port', 'SMB Signing Enforced', 'SMBv1 Disabled']
+    column_widths = [30, 13, 10, 8, 20, 17]
+    df = pd.DataFrame(columns=columns)
+
+    for report_host in nfr.scan.report_hosts(root):
+        # Initialize variables for host
+        finding_present = False
+        smb_signing_vuln = smb_v1_vuln = "Yes"
+        report_ip = nfr.host.resolved_ip(report_host)
+        report_fqdn = Hosts.get(report_ip, "-")
+
+        report_items_per_host = nfr.host.report_items(report_host)
+        for report_item in report_items_per_host:
+            plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
+            smb_port_candidate = nfr.plugin.report_item_value(report_item, 'port')
+
+            if smb_port_candidate == "445":
+                # If we are dealing with SMB, update the protocol and port once
+                smb_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                smb_port = smb_port_candidate
+
+                # Flag to check if at least one finding is present for the host
+                if plugin_id in [57608, 96982]:
+                    finding_present = True
+
+                    if plugin_id == 57608:
+                        smb_signing_plugin = nfr.plugin.plugin_outputs(root, report_host, '57608')
+                        if smb_signing_plugin and not re.match('[Cc]heck Audit Trail', smb_signing_plugin):
+                            smb_signing_vuln = "No"
+
+                    if plugin_id == 96982:
+                        smb_v1_plugin = nfr.plugin.plugin_outputs(root, report_host, '96982')
+                        if smb_v1_plugin and not re.match('[Cc]heck Audit Trail', smb_v1_plugin):
+                            smb_v1_vuln = "No"
+
+        # After processing all report items for the host, add a single row to the DataFrame if finding present
+        if finding_present:
+            row = [report_fqdn, report_ip, smb_protocol, smb_port, smb_signing_vuln, smb_v1_vuln]
+            df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
+
+    # Writing the DataFrame
+    if not df.empty:
+        df = df.drop_duplicates(subset=['IP Address', 'Port'], keep='last')
+        WriteDataFrame(df, 'Weak SMB', column_widths)
+
+    toc = time.perf_counter()
+    if args.verbose:
+        print(f"DEBUG - Completed SMB. {len(df)} rows took {toc - tic:0.4f} seconds")
 
 # Extract list of hosts in which Cred Patch was Possible/Successful
 def extractCredPatch():
@@ -1543,11 +1704,8 @@ def extractTLSWeaknesses():
                '20007': 26,  # 'Protocols with known weaknesses allowed',
                '104743': 26}  # 'Protocols with known weaknesses allowed'
 
-    # this will be used to store all issues
-    host_dict = {}
     for report_host in nfr.scan.report_hosts(root):
         report_ip = nfr.host.resolved_ip(report_host)
-
 
         report_items_per_host = nfr.host.report_items(report_host)
         for report_item in report_items_per_host:
@@ -1842,7 +2000,7 @@ def WriteDataFrame(dataframe, sheet_name, column_widths, style=None, txtwrap=[])
                     elif cell_value == 'Low':
                         format_to_apply = low_format
 
-                elif style == 'tls':
+                elif style and style.startswith('tls'):
                     # Specific TLS formatting based on cell value
                     if cell_value == 'a':
                         format_to_apply = tls_good_format
@@ -1896,7 +2054,9 @@ services         = Insecure Services and their weak permissions
 search           = Extract all information based on keyword e.g. "Log4j" (Requires --keyword / -k flag)
 software         = Enumerate all installed software
 ssh              = Identify all weak SSH algorithms and ciphers in use
-unencrypted      = Unencrypted protocols in use. FTP, Telnet etc.
+rdp              = Identify all weak RDP settings. NLA, weak encryption cipher etc
+smb              = Identify all weak SMB settings. Signing not enforced, version 1 enabled etc
+unencrypted      = Unencrypted protocols in use. FTP, Telnet, HTTP, etc.
 unquoted         = Unquoted service paths and their weak permissions
 unsupported      = Unsupported operating systems
 winpatches       = Missing Microsoft security patches
@@ -2028,6 +2188,10 @@ else:
             extractInstalledSoftware() ; continue
         if 'ssh' == module.lower():
             extractWeakSSHAlgorithms() ; continue
+        if 'rdp' == module.lower():
+            extractWeakRDP() ; continue
+        if 'smb' == module.lower():
+            extractWeakSMB() ; continue
         if 'unencrypted' == module.lower():
             extractUnencryptedProtocols() ; continue
         if 'unquoted' == module.lower():
