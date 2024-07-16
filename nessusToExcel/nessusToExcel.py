@@ -1045,7 +1045,6 @@ def extractUnencryptedProtocols():
     for report_host in nfr.scan.report_hosts(root):
         report_ip = nfr.host.resolved_ip(report_host)
         report_fqdn = Hosts[report_ip]
-
         report_items_per_host = nfr.host.report_items(report_host)
 
         # Creating dictionary with key: port, value: array of plugin ids
