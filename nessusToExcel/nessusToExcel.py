@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 import os, re, argparse, shutil, time, textwrap, json
 from xml.etree.ElementTree import ParseError
+from collections import defaultdict
 import nessus_file_reader as nfr
 import pandas as pd
 
@@ -1044,18 +1045,24 @@ def extractUnencryptedProtocols():
     for report_host in nfr.scan.report_hosts(root):
         report_ip = nfr.host.resolved_ip(report_host)
         report_fqdn = Hosts[report_ip]
-
         report_items_per_host = nfr.host.report_items(report_host)
-        plugin_ids_per_host = [int(nfr.plugin.report_item_value(i, 'pluginID')) for i in report_items_per_host]
-        for report_item in report_items_per_host:
 
+        # Creating dictionary with key: port, value: array of plugin ids
+        plugin_ids_per_port = defaultdict(list)
+        for i in report_items_per_host:
+            tmp_port = str(nfr.plugin.report_item_value(i, 'port'))
+            plugin_ids_per_port[tmp_port].append(nfr.plugin.report_item_value(i, 'pluginID'))
+
+        for report_item in report_items_per_host:
             plugin_id = int(nfr.plugin.report_item_value(report_item, 'pluginID'))
             unencrypted_protocol = None
+
             # checking all HTTP servers first
-            if plugin_id == 10107 and not any([p_id in tls_detection_plugins for p_id in plugin_ids_per_host]):
-                unencrypted_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+            if plugin_id == 10107:
                 unencrypted_port = nfr.plugin.report_item_value(report_item, 'port')
-                unencrypted_description = nfr.plugin.report_item_value(report_item, 'plugin_name')
+                if not any([p_id in tls_detection_plugins for p_id in plugin_ids_per_port[str(unencrypted_port)]]):
+                    unencrypted_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
+                    unencrypted_description = nfr.plugin.report_item_value(report_item, 'plugin_name')
 
             elif (plugin_id == 10092 or plugin_id == 10281 or plugin_id == 54582 or plugin_id == 11819 or plugin_id == 35296
             or plugin_id == 87733 or plugin_id == 10203 or plugin_id == 10205 or plugin_id == 10061 or plugin_id == 10198
