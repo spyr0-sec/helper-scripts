@@ -70,7 +70,7 @@ except:
 # Functions
 def extractAll():
     extractHosts()
-    extractIssues()
+    extractIssues(args.all_issues)
     extractCompliance()
     extractDatabases()
     extractDefaultHTTP()
@@ -135,7 +135,7 @@ def extractHosts():
             print(f'DEBUG - Completed Host Information. {len(df)} rows took {toc - tic:0.4f} seconds')
 
 # Extract all non-informational issues
-def extractIssues():
+def extractIssues(all=False):
     tic = time.perf_counter()
 
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
@@ -144,10 +144,11 @@ def extractIssues():
                'Protocol',
                'Port',
                'Risk',
-               'Issue']
+               'Issue',
+               'Description']
                # 'Reporter Issue - 30']
     # Any reason to keep that?? ^^ - why was it there?
-    column_widths = [40, 15, 10, 6, 8, 100, 30]
+    column_widths = [40, 15, 10, 6, 8, 100, 200]
     df = pd.DataFrame(columns=columns)
 
     for report_host in nfr.scan.report_hosts(root):
@@ -159,10 +160,11 @@ def extractIssues():
 
             risk_factor = nfr.plugin.report_item_value(report_item, 'risk_factor')
 
-            if risk_factor != "None":
+            if all or risk_factor != 'None':
                 issue_protocol = nfr.plugin.report_item_value(report_item, 'protocol')
                 issue_port = nfr.plugin.report_item_value(report_item, 'port')
-                issue_description = nfr.plugin.report_item_value(report_item, 'plugin_name')
+                issue_name = nfr.plugin.report_item_value(report_item, 'plugin_name')
+                issue_description = nfr.plugin.report_item_value(report_item, 'description')
 
                 # Write to Excel worksheet
                 row = [report_fqdn,
@@ -170,6 +172,7 @@ def extractIssues():
                        issue_protocol,
                        issue_port,
                        risk_factor,
+                       issue_name,
                        issue_description]
                 df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
@@ -2043,7 +2046,7 @@ parser.add_argument('--out', '-o', required=False, help='Name of resulting Excel
 parser.add_argument('--quiet', '-q', action='store_true', help='Accept defaults during execution')
 parser.add_argument('--keyword', '-k', required=False, help='Extract all information relating to this word')
 parser.add_argument('--noclean', '-n', required=False, action='store_true', help='Do not remove duplicates and merge columns in outdatedsoftware')
-# parser.add_argument('--nostyle', '-s', required=False, action='store_true', help='Do not apply any style')
+parser.add_argument('--all-issues', '-a', default=False, required=False, action='store_true', help='Include issues with no risk in the "All Issues" tab. (This will take a while). Applies to the module "issues"')
 parser.add_argument('--module', '-m', type=str, default='all',
 help=textwrap.dedent('''Comma seperated list of what data you want to extract:
 all              = Default
@@ -2170,43 +2173,43 @@ else:
 
     for module in argvars["module"]:
         if 'compliance' == module.lower():
-            extractCompliance() ; continue
+            extractCompliance(); continue
         if 'databases' == module.lower():
-            extractDatabases() ; continue
+            extractDatabases(); continue
         if 'defaulthttp' == module.lower():
-            extractDefaultHTTP() ; continue
+            extractDefaultHTTP(); continue
         if 'hosts' == module.lower():
-            extractHosts() ; continue
+            extractHosts(); continue
         if 'http' == module.lower():
-            extractHTTPServers() ; continue
+            extractHTTPServers(); continue
         if 'issues' == module.lower():
-            extractIssues() ; continue
+            extractIssues(args.all_issues); continue
         if 'lastupdated' == module.lower():
-            extractLastUpdated() ; continue
+            extractLastUpdated(); continue
         if 'nixpatches' == module.lower():
-            extractLinuxPatches() ; continue
+            extractLinuxPatches(); continue
         if 'outdatedsoftware' == module.lower():
-            extractOutdatedSoftware() ; continue
+            extractOutdatedSoftware(); continue
         if 'ports' == module.lower():
-            extractOpenPorts() ; continue
+            extractOpenPorts(); continue
         if 'services' == module.lower():
-            extractWeakServicePermissions() ; continue
+            extractWeakServicePermissions(); continue
         if 'software' == module.lower():
-            extractInstalledSoftware() ; continue
+            extractInstalledSoftware(); continue
         if 'ssh' == module.lower():
-            extractWeakSSHAlgorithms() ; continue
+            extractWeakSSHAlgorithms(); continue
         if 'rdp' == module.lower():
-            extractWeakRDP() ; continue
+            extractWeakRDP(); continue
         if 'smb' == module.lower():
-            extractWeakSMB() ; continue
+            extractWeakSMB(); continue
         if 'unencrypted' == module.lower():
-            extractUnencryptedProtocols() ; continue
+            extractUnencryptedProtocols(); continue
         if 'unquoted' == module.lower():
-            extractUnquotedServicePaths() ; continue
+            extractUnquotedServicePaths(); continue
         if 'unsupported' == module.lower():
-            extractUnsupportedOperatingSystems() ; continue
+            extractUnsupportedOperatingSystems(); continue
         if 'winpatches' == module.lower():
-            extractMSPatches() ; continue
+            extractMSPatches(); continue
         if 'search' == module.lower():
             if (args.keyword is not None):
                 searchPlugins(args.keyword); continue
