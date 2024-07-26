@@ -4,6 +4,7 @@ from xml.etree.ElementTree import ParseError
 from collections import defaultdict
 import nessus_file_reader as nfr
 import pandas as pd
+import hashlib
 
 # CHANGELOG
 # v0.1 - 26/01/2022 - Merged all modules into one file and created wrapper
@@ -52,6 +53,8 @@ import pandas as pd
 # Columns width - Hostname = 40 / IP Address = 15 / Operating System = 40 / Protocol = 10 / Port = 6 / Other = variable
 # Long Date format - 01 January 1970 - 31 December 2049
 
+# TODO: Visual timer -> https://stackoverflow.com/questions/44376554/how-can-i-get-python-to-print-out-the-current-elapsed-time-while-a-function-is-r
+
 # Globals hosts dictionary to lookup host information by report_host
 Hosts = {}
 root = ""
@@ -92,9 +95,21 @@ def extractAll():
     extractCredPatch()
     extractTLSWeaknesses()
 
+def md5(file_path):
+    # Calculate the MD5 hash of a file.
+    with open(file_path, 'rb') as f:
+        file_hash = hashlib.md5()
+        while chunk := f.read(8192):
+            file_hash.update(chunk)
+    return file_hash.hexdigest()
+
 # Extract system information
 def extractHosts():
     tic = time.perf_counter()
+
+    # TODO: save hash of nessus in file and check before running
+    # if file is the same, skip this step
+    # nessus_file_md5 = md5(args.file)
 
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
     columns = ['IP Address',
@@ -1038,11 +1053,11 @@ def extractUnencryptedProtocols():
     df = pd.DataFrame(columns=columns)
 
     tls_detection_plugins = [
-        10863,  # SSL Certificate Information
-        56984,  # SSL / TLS Versions Supported
-        115491, # SSL/TLS Cipher Suites Supported
-        112530, # SSL/TLS Versions Supported
-        700112  # SSL/TLS Detection
+        '10863',  # SSL Certificate Information
+        '56984',  # SSL / TLS Versions Supported
+        '115491', # SSL/TLS Cipher Suites Supported
+        '112530', # SSL/TLS Versions Supported
+        '700112'  # SSL/TLS Detection
     ]
 
     for report_host in nfr.scan.report_hosts(root):
