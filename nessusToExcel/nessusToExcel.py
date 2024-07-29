@@ -928,7 +928,8 @@ def extractOutdatedSoftware():
                 'Installed Version',
                 'Latest Version',
                 'Path',
-                'End of Support Date' ]
+                'End of Support Date',
+                'PluginID' ]
     column_widths = [40, 15, 10, 100, 17, 14, 70, 55, 100, 20]
 
     # Creating an empty DataFrame with these columns
@@ -940,7 +941,8 @@ def extractOutdatedSoftware():
         'File Version',
         'DLL Version',
         'File version',
-        'ESXi version'
+        'ESXi version',
+        'Installed build',
     ]
 
     # No queries to pull out just outdated software plugins. So will go through each one and look for "Installed version"
@@ -1011,7 +1013,8 @@ def extractOutdatedSoftware():
                                installed_version,
                                latest_version,
                                installed_path,
-                               eol_date]
+                               eol_date,
+                               plugin_id]
                         df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
                         # leaving this one here for potential debugging
@@ -1024,19 +1027,23 @@ def extractOutdatedSoftware():
         if not args.noclean:
             df = df.drop_duplicates()
 
+            # Order by PluginID Highest to Lowest
+            df = df.sort_values(by='PluginID', ascending=False)
+
             # define aggregation functions for each column
-            # TODO: define a function for the repeated methods
             aggregations = {
                 'Hostname': lambda x: next((i for i in reversed(x.tolist()) if i), None),   # Keep the first non-empty
                 'Severity': lambda x: max(x, key=lambda s: severity_hierarchy[s]),          # Keep the highest severity
-                'Issue': lambda x: ''.join(i for i in x.unique() if i),                     # Keep unique if not None
+                'Issue': lambda x: x.iloc[0],                                               # Keep first based on most recent PluginID
                 'Exploit Available': lambda x: any(x),                                      # Logic gate OR
                 'CVE': lambda x: '\n'.join(i for i in x.unique() if i),                     # Join with \n if not None
-                'Latest Version': lambda x: ''.join(i for i in x.unique() if i),            # Keep unique if not None
-                'End of Support Date': lambda x: ''.join(i for i in x.unique() if i)        # Keep unique if not None
+                'Latest Version': lambda x: x.iloc[0],                                      # Keep first based on most recent PluginID
+                'End of Support Date': lambda x: ''.join(i for i in x.unique() if i),       # Keep unique if not None
+                'PluginID': lambda x: x.iloc[0]                                             # Keep first based on most recent PluginID
             }
             df = df.groupby(['IP Address', 'Installed Version', 'Path'], as_index=False).agg(aggregations)
             df = df[columns]
+            df = df.drop(columns=['PluginID'])
 
         # Writing the DataFrame
         WriteDataFrame(df, 'Outdated Software', column_widths, style='severity', txtwrap=['CVE'])
@@ -1453,7 +1460,6 @@ def extractWeakSSHAlgorithms():
             df = df.drop_duplicates()
 
             # define aggregation functions for each column
-            # TODO: define a function for the repeated methods
             aggregations = {
                 'Hostname': lambda x: next((i for i in reversed(x.tolist()) if i), None),                       # Keep the first non-empty
                 'Weak Encryption Algorithm': lambda x: '\n'.join(i for i in x.unique() if i),                   # Concat with \n
@@ -1773,7 +1779,6 @@ def extractTLSWeaknesses():
 
             # congregate all findings
             # define aggregation functions for each column
-            # TODO: define a function for the repeated methods
             aggregations = {
                 'Hostname': lambda x: next((i for i in reversed(x.tolist()) if i), None),  # Keep the first non-empty
             }
