@@ -933,6 +933,15 @@ def extractOutdatedSoftware():
 
     # Creating an empty DataFrame with these columns
     df = pd.DataFrame(columns=columns)
+    installed_version_line = [
+        'Installed version',
+        'Channel version',
+        'Product',
+        'File Version',
+        'DLL Version',
+        'File version',
+        'ESXi version'
+    ]
 
     # No queries to pull out just outdated software plugins. So will go through each one and look for "Installed version"
     for report_host in nfr.scan.report_hosts(root):
@@ -958,7 +967,7 @@ def extractOutdatedSoftware():
                     cve_text = None
 
                 # resetting all variables
-                installed_version = None; latest_version = None; eol_date = None; installed_path = None
+                installed_version = None; latest_version = None; eol_date = None; installed_path = 'NA'
 
                 exploit_exists = False
                 exploit_exists_debugging = False
@@ -974,10 +983,10 @@ def extractOutdatedSoftware():
 
                 lines = plugin_output.splitlines()
                 for idx, line in enumerate(lines):
-                    if 'Installed version' in line or 'Channel version' in line or 'Product' in line or 'File Version' in line or 'DLL Version' in line or 'File version' in line:
+                    if any([l in line for l in installed_version_line]):
                         installed_version = line.split(':',1)
                         installed_version = installed_version[-1].strip()
-                    if 'Supported version' in line or 'Fixed version' in line or 'Minimum supported version' in line:
+                    if 'Supported version' in line or 'Fixed version' in line or 'Minimum supported version' in line or 'Fixed build' in line:
                         latest_version = line.split(':',1)
                         latest_version = latest_version[-1].strip()
                     if 'End of support' in line or 'Support ended' in line or 'EOL date' in line:
@@ -987,7 +996,7 @@ def extractOutdatedSoftware():
                         installed_path = line.split(':',1)
                         installed_path = installed_path[-1].strip()
                         # When a SW is enumerated remotely (web for instance) there is no Path info
-                        installed_path = None if installed_path == '/' else installed_path
+                        installed_path = 'NA' if installed_path == '/' else installed_path
 
                     # Wait until we get to the last line of the plugin output before writing to Excel
                     if (idx == len(lines)-1) and (installed_version or latest_version or eol_date is not None):
