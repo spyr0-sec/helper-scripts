@@ -4,6 +4,7 @@ from xml.etree.ElementTree import ParseError
 from collections import defaultdict
 import nessus_file_reader as nfr
 import pandas as pd
+import hashlib
 
 # CHANGELOG
 # v0.1 - 26/01/2022 - Merged all modules into one file and created wrapper
@@ -52,6 +53,8 @@ import pandas as pd
 # Columns width - Hostname = 40 / IP Address = 15 / Operating System = 40 / Protocol = 10 / Port = 6 / Other = variable
 # Long Date format - 01 January 1970 - 31 December 2049
 
+# TODO: Visual timer -> https://stackoverflow.com/questions/44376554/how-can-i-get-python-to-print-out-the-current-elapsed-time-while-a-function-is-r
+
 # Globals hosts dictionary to lookup host information by report_host
 Hosts = {}
 root = ""
@@ -92,9 +95,21 @@ def extractAll():
     extractCredPatch()
     extractTLSWeaknesses()
 
+def md5(file_path):
+    # Calculate the MD5 hash of a file.
+    with open(file_path, 'rb') as f:
+        file_hash = hashlib.md5()
+        while chunk := f.read(8192):
+            file_hash.update(chunk)
+    return file_hash.hexdigest()
+
 # Extract system information
 def extractHosts():
     tic = time.perf_counter()
+
+    # TODO: save hash of nessus in file and check before running
+    # if file is the same, skip this step
+    # nessus_file_md5 = md5(args.file)
 
     # Create DataFrame. Xlswriter doesn't support autofit so best guess for column widths
     columns = ['IP Address',
@@ -913,11 +928,22 @@ def extractOutdatedSoftware():
                 'Installed Version',
                 'Latest Version',
                 'Path',
-                'End of Support Date' ]
+                'End of Support Date',
+                'PluginID' ]
     column_widths = [40, 15, 10, 100, 17, 14, 70, 55, 100, 20]
 
     # Creating an empty DataFrame with these columns
     df = pd.DataFrame(columns=columns)
+    installed_version_line = [
+        'Installed version',
+        'Channel version',
+        'Product',
+        'File Version',
+        'DLL Version',
+        'File version',
+        'ESXi version',
+        'Installed build',
+    ]
 
     # No queries to pull out just outdated software plugins. So will go through each one and look for "Installed version"
     for report_host in nfr.scan.report_hosts(root):
@@ -943,7 +969,7 @@ def extractOutdatedSoftware():
                     cve_text = None
 
                 # resetting all variables
-                installed_version = None; latest_version = None; eol_date = None; installed_path = None
+                installed_version = None; latest_version = None; eol_date = None; installed_path = 'NA'
 
                 exploit_exists = False
                 exploit_exists_debugging = False
@@ -959,10 +985,10 @@ def extractOutdatedSoftware():
 
                 lines = plugin_output.splitlines()
                 for idx, line in enumerate(lines):
-                    if 'Installed version' in line or 'Channel version' in line or 'Product' in line or 'File Version' in line or 'DLL Version' in line or 'File version' in line:
+                    if any([l in line for l in installed_version_line]):
                         installed_version = line.split(':',1)
                         installed_version = installed_version[-1].strip()
-                    if 'Supported version' in line or 'Fixed version' in line or 'Minimum supported version' in line:
+                    if 'Supported version' in line or 'Fixed version' in line or 'Minimum supported version' in line or 'Fixed build' in line:
                         latest_version = line.split(':',1)
                         latest_version = latest_version[-1].strip()
                     if 'End of support' in line or 'Support ended' in line or 'EOL date' in line:
@@ -972,7 +998,7 @@ def extractOutdatedSoftware():
                         installed_path = line.split(':',1)
                         installed_path = installed_path[-1].strip()
                         # When a SW is enumerated remotely (web for instance) there is no Path info
-                        installed_path = None if installed_path == '/' else installed_path
+                        installed_path = 'NA' if installed_path == '/' else installed_path
 
                     # Wait until we get to the last line of the plugin output before writing to Excel
                     if (idx == len(lines)-1) and (installed_version or latest_version or eol_date is not None):
@@ -987,7 +1013,8 @@ def extractOutdatedSoftware():
                                installed_version,
                                latest_version,
                                installed_path,
-                               eol_date]
+                               eol_date,
+                               plugin_id]
                         df = pd.concat([df, pd.DataFrame([row], columns=columns)], ignore_index=True)
 
                         # leaving this one here for potential debugging
@@ -1000,19 +1027,23 @@ def extractOutdatedSoftware():
         if not args.noclean:
             df = df.drop_duplicates()
 
+            # Order by PluginID Highest to Lowest
+            df = df.sort_values(by='PluginID', ascending=False)
+
             # define aggregation functions for each column
-            # TODO: define a function for the repeated methods
             aggregations = {
                 'Hostname': lambda x: next((i for i in reversed(x.tolist()) if i), None),   # Keep the first non-empty
                 'Severity': lambda x: max(x, key=lambda s: severity_hierarchy[s]),          # Keep the highest severity
-                'Issue': lambda x: ''.join(i for i in x.unique() if i),                     # Keep unique if not None
+                'Issue': lambda x: x.iloc[0],                                               # Keep first based on most recent PluginID
                 'Exploit Available': lambda x: any(x),                                      # Logic gate OR
                 'CVE': lambda x: '\n'.join(i for i in x.unique() if i),                     # Join with \n if not None
-                'Latest Version': lambda x: ''.join(i for i in x.unique() if i),            # Keep unique if not None
-                'End of Support Date': lambda x: ''.join(i for i in x.unique() if i)        # Keep unique if not None
+                'Latest Version': lambda x: x.iloc[0],                                      # Keep first based on most recent PluginID
+                'End of Support Date': lambda x: ''.join(i for i in x.unique() if i),       # Keep unique if not None
+                'PluginID': lambda x: x.iloc[0]                                             # Keep first based on most recent PluginID
             }
             df = df.groupby(['IP Address', 'Installed Version', 'Path'], as_index=False).agg(aggregations)
             df = df[columns]
+            df = df.drop(columns=['PluginID'])
 
         # Writing the DataFrame
         WriteDataFrame(df, 'Outdated Software', column_widths, style='severity', txtwrap=['CVE'])
@@ -1038,11 +1069,11 @@ def extractUnencryptedProtocols():
     df = pd.DataFrame(columns=columns)
 
     tls_detection_plugins = [
-        10863,  # SSL Certificate Information
-        56984,  # SSL / TLS Versions Supported
-        115491, # SSL/TLS Cipher Suites Supported
-        112530, # SSL/TLS Versions Supported
-        700112  # SSL/TLS Detection
+        '10863',  # SSL Certificate Information
+        '56984',  # SSL / TLS Versions Supported
+        '115491', # SSL/TLS Cipher Suites Supported
+        '112530', # SSL/TLS Versions Supported
+        '700112'  # SSL/TLS Detection
     ]
 
     for report_host in nfr.scan.report_hosts(root):
@@ -1429,7 +1460,6 @@ def extractWeakSSHAlgorithms():
             df = df.drop_duplicates()
 
             # define aggregation functions for each column
-            # TODO: define a function for the repeated methods
             aggregations = {
                 'Hostname': lambda x: next((i for i in reversed(x.tolist()) if i), None),                       # Keep the first non-empty
                 'Weak Encryption Algorithm': lambda x: '\n'.join(i for i in x.unique() if i),                   # Concat with \n
@@ -1749,7 +1779,6 @@ def extractTLSWeaknesses():
 
             # congregate all findings
             # define aggregation functions for each column
-            # TODO: define a function for the repeated methods
             aggregations = {
                 'Hostname': lambda x: next((i for i in reversed(x.tolist()) if i), None),  # Keep the first non-empty
             }
